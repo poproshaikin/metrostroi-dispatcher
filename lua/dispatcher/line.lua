@@ -12,6 +12,7 @@
 --
 -- Events (hook.Run), fired for consists that have a driver:
 --   Dispatcher_Arrive (consist, state, platform, stopError)  stopped at a platform
+--                     (or in a siding: platform.siding == true)
 --                     stopError: metres to the stop mark (+ short, - overrun)
 --   Dispatcher_Depart (consist, state, platform, departTime) left the platform;
 --                     departTime: Line.Now() when the train started moving
@@ -24,6 +25,7 @@ local U2M          = 0.01905  -- source units -> metres
 local CAB_FRONT    = 470      -- local X of the wagon's cab end, units
 local STOP_OVERRUN = 15       -- metres past the stop mark still counted "at platform"
 local STOP_SPEED   = 0.5      -- km/h, below this the train is "stopped"
+local SIDING_ACCEPT = 80      -- metres short of a siding's stop mark still counted "in the siding"
 
 --------------------------------------------------------------------------------
 -- Stations
@@ -41,7 +43,7 @@ end
 local function build()
     local src = Metrostroi.Stations
     if not src then return false end
-    if cache.src == src and cache.stations then return true end
+    if cache.src == src and cache.stations and cache.sidingsVersion == Line._sidingsVersion then return true end
 
     -- Station/Platform tables keep their identity across rebuilds and Lua reloads,
     -- so trips and orders holding them stay valid (they compare platforms with ==).
@@ -70,6 +72,8 @@ local function build()
             pl.terminal = IsValid(p.ent) and p.ent.PlatformLast or false
             pl.ent      = p.ent
             pl.node     = p.node_end               -- opaque, for Line.TravelTime only
+            pl.key      = key                      -- stable id, for saving
+            pl.title    = st.name                  -- what to call it in messages
             st.platforms[idx] = pl
             platforms[#platforms + 1] = pl
         end
@@ -88,8 +92,110 @@ local function build()
         end
     end
 
-    cache = { src = src, stations = stations, byId = byId, platforms = platforms, orderDir = orderDir }
+    -- Sidings (turnback dead ends): Platform-like stop marks off the station list.
+    --   siding = true, name, station (parent), from (arrival platform index),
+    --   opposite (departure platform after the cab change)
+    local sidings = {}
+    for _, def in ipairs(Line.SidingDefs()) do
+        local st = byId[def.station]
+        local path = Metrostroi.Paths and Metrostroi.Paths[def.path]
+        if not st or not path then continue end
+        local node
+        for _, n in ipairs(path) do
+            if n.x <= def.x then node = n else break end
+        end
+        local key = "siding:" .. def.name
+        local sd = objs.platforms[key] or {}
+        objs.platforms[key] = sd
+        local s = def.dir and 1 or -1
+        sd.siding   = true
+        sd.name     = def.name
+        sd.title    = def.name
+        sd.key      = key
+        sd.station  = st
+        sd.index    = 0
+        sd.from     = def.from
+        sd.opposite = st.platforms[def.from == 1 and 2 or 1]
+        sd.path     = path
+        sd.xEnd     = def.x
+        sd.xStart   = def.x - s * SIDING_ACCEPT
+        sd.dir      = def.dir
+        sd.length   = SIDING_ACCEPT
+        sd.terminal = false
+        sd.node     = node
+        sidings[#sidings + 1] = sd
+        platforms[#platforms + 1] = sd
+    end
+
+    cache = { src = src, stations = stations, byId = byId, platforms = platforms, orderDir = orderDir,
+              sidings = sidings, sidingsVersion = Line._sidingsVersion }
     return true
+end
+
+--------------------------------------------------------------------------------
+-- Sidings: marked in game (!тупик) and saved per map, or listed in the map config
+--------------------------------------------------------------------------------
+local SIDINGS_FILE = "dispatcher/sidings_" .. game.GetMap():lower() .. ".json"
+
+function Line.SidingDefs()
+    if not Line._sidingDefs then
+        Line._sidingDefs = util.JSONToTable(file.Read(SIDINGS_FILE, "DATA") or "") or {}
+    end
+    local list = {}
+    for _, d in ipairs((Dispatcher.MapConfig or {}).sidings or {}) do list[#list + 1] = d end
+    for _, d in ipairs(Line._sidingDefs) do list[#list + 1] = d end
+    return list
+end
+
+local function saveSidings()
+    file.CreateDir("dispatcher")
+    file.Write(SIDINGS_FILE, util.TableToJSON(Line._sidingDefs, true))
+    Line._sidingsVersion = (Line._sidingsVersion or 0) + 1
+end
+
+function Line.GetSidings()
+    if not build() then return {} end
+    return cache.sidings
+end
+
+-- Siding where a train that arrived at `platform` goes for the cab change.
+function Line.SidingFor(platform)
+    if not build() or not platform or platform.siding then return end
+    for _, sd in ipairs(cache.sidings) do
+        if sd.station == platform.station and sd.from == platform.index then return sd end
+    end
+end
+
+-- Mark the current cab position of `consist` as a siding stop mark.
+-- Returns the siding definition, or nil + error text.
+function Line.AddSiding(consist, name)
+    local st = Line.GetState(consist)
+    if not st or not st.onTrack then return nil, "поезд не на путях" end
+    if not st.stopped then return nil, "остановись" end
+    if st.at and not st.at.siding then return nil, "ты на платформе, а не в тупике" end
+    local from = Line.GetMemory(consist).passed
+    if not from or from.siding then return nil, "не знаю, от какой станции этот тупик: сначала проедь её платформу" end
+    name = (name and name ~= "") and name or ("Тупик ст. " .. from.station.name)
+    Line._sidingDefs = Line._sidingDefs or {}
+    for i = #Line._sidingDefs, 1, -1 do
+        if Line._sidingDefs[i].name == name then table.remove(Line._sidingDefs, i) end
+    end
+    local def = { name = name, station = from.station.id, from = from.index, path = st.path.id, x = st.x, dir = st.dirPlus }
+    table.insert(Line._sidingDefs, def)
+    saveSidings()
+    return def
+end
+
+function Line.RemoveSiding(name)
+    Line.SidingDefs()
+    for i = #Line._sidingDefs, 1, -1 do
+        if Line._sidingDefs[i].name == name then
+            table.remove(Line._sidingDefs, i)
+            saveSidings()
+            return true
+        end
+    end
+    return false
 end
 
 -- Ordered list of stations (by station index). Empty table if not ready yet.
@@ -129,6 +235,7 @@ end
 -- The other platform of the same station (where a train departs after turnover).
 function Line.OppositePlatform(platform)
     if not platform then return end
+    if platform.siding then return platform.opposite end
     return platform.station.platforms[platform.index == 1 and 2 or 1]
 end
 
@@ -216,7 +323,15 @@ end
 --------------------------------------------------------------------------------
 -- State
 --------------------------------------------------------------------------------
-local memory = setmetatable({}, { __mode = "k" })  -- per head wagon: lastPlatform etc.
+-- Per consist (not per head wagon: the head changes when the driver changes cabs)
+Line._memory = Line._memory or {}
+local memory = Line._memory
+
+function Line.GetMemory(consist)
+    local mem = memory[consist.id] or {}
+    memory[consist.id] = mem
+    return mem
+end
 
 local function locate(path, x, dirPlus)
     local s = dirPlus and 1 or -1
@@ -226,7 +341,7 @@ local function locate(path, x, dirPlus)
         local toEnd     = (pl.xEnd - x) * s
         local fromStart = (x - pl.xStart) * s
         if toEnd < -STOP_OVERRUN then continue end
-        if fromStart >= 0 then at = pl end
+        if fromStart >= 0 and (not at or at.siding) then at = pl end   -- a real platform wins
         if not best or toEnd < best then best, stop = toEnd, pl end
     end
     return at, stop, best
@@ -269,8 +384,7 @@ function Line.GetState(consist)
     }
     st.stopped = st.speed < STOP_SPEED
 
-    local mem = memory[head] or {}
-    memory[head] = mem
+    local mem = Line.GetMemory(consist)
     st.last = mem.last
 
     -- Near switches / parallel tracks several track paths can be under the cab.
@@ -302,7 +416,7 @@ function Line.GetState(consist)
     st.trackCandidates = #positions
     mem.path = st.path
     st.at = at
-    if at then mem.passed = at end   -- passed through, stopped or not
+    if at and not at.siding then mem.passed = at end   -- passed through, stopped or not
     if stop then
         st.stop, st.distToStop = stop, dist
     elseif mem.passed then
@@ -329,10 +443,10 @@ hook.Add("Think", "Dispatcher_LineEvents", function()
     for _, c in ipairs(Line.GetConsists()) do
         local st = Line.GetState(c)
         if not st or not IsValid(st.driver) then continue end
-        local mem = memory[st.head]
+        local mem = Line.GetMemory(c)
 
         if st.at and st.stopped and mem.arrived ~= st.at then
-            mem.arrived, mem.last, mem.moveStart = st.at, st.at, nil
+            mem.arrived, mem.last, mem.moveStart, mem.arrivedHead = st.at, st.at, nil, st.head
             local err = st.stop == st.at and st.distToStop or nil
             hook.Run("Dispatcher_Arrive", c, st, st.at, err)
         elseif mem.arrived then
@@ -344,10 +458,21 @@ hook.Add("Think", "Dispatcher_LineEvents", function()
             elseif not mem.moveStart and st.speed > 1 then
                 mem.moveStart = Line.Now()
             end
-            if st.at ~= mem.arrived then
-                local pl = mem.arrived
+            local pl = mem.arrived
+            -- A siding is left the other way round, after a cab change (the head is
+            -- now the other end of the train): moving at all = departed.
+            -- A platform: the head has left it AND the train has moved (a cab change
+            -- while standing at a platform must not count as a departure).
+            local departed
+            if pl.siding then
+                -- creeping up to the buffer with the same cab is not a departure
+                departed = mem.moveStart ~= nil and st.head ~= mem.arrivedHead
+            else
+                departed = st.at ~= pl and mem.moveStart ~= nil
+            end
+            if departed then
                 mem.arrived = nil
-                hook.Run("Dispatcher_Depart", c, st, pl, mem.moveStart or Line.Now())
+                hook.Run("Dispatcher_Depart", c, st, pl, mem.moveStart)
                 mem.moveStart = nil
             end
         end

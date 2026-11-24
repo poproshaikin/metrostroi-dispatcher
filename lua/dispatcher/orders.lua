@@ -48,7 +48,8 @@ function O.TurnbackCandidates(consist, anyStation)
     if not trip or a.finished then return {} end
     local st = Line.GetState(consist)
     local list = {}
-    for j = (trip.cur or 1) + 1, #trip.stops - 1 do
+    local lastReal = #trip.stops - (trip.stops[#trip.stops].platform.siding and 1 or 0)
+    for j = (trip.cur or 1) + 1, lastReal - 1 do
         local s = trip.stops[j]
         if not anyStation and not O.IsTurnbackStation(s.platform.station) then continue end
         if j == (trip.cur or 1) + 1 and trip.stops[trip.cur].factDep then
@@ -70,13 +71,11 @@ function O.IssueTurnback(consist, stop, reason)
     local opposite = Line.OppositePlatform(pl)
     if not opposite then return nil, "no opposite platform" end
 
-    if not S.TurnBack(a, pl) then return nil, "not on the current trip" end
-    -- Last trip of the shift: still bring the train back to the terminal
-    if not a.trips[a.ti + 1] then
-        local back = S.BuildTrip(opposite, stop.arr + GetConVar("dispatcher_turnover"):GetInt())
-        if back then a.trips[#a.trips + 1] = back end
-    end
+    -- (on the last trip of the shift still bring the train back to the terminal)
+    if not S.TurnBack(a, pl, true) then return nil, "not on the current trip" end
     local nextTrip = a.trips[a.ti + 1]
+    opposite = nextTrip and nextTrip.stops[1].platform or opposite
+    local sd = Line.SidingFor(pl)
     local dep = nextTrip and nextTrip.stops[1].dep
 
     orderCounter = orderCounter + 1
@@ -89,9 +88,11 @@ function O.IssueTurnback(consist, stop, reason)
     O.Log[consist.id] = O.Log[consist.id] or {}
     table.insert(O.Log[consist.id], order)
 
-    order.text = Format("Приказ №%d. %sОборот по ст. %s: высадка пассажиров, оборот по съезду, "
+    order.text = Format("Приказ №%d. %sОборот по ст. %s: высадка пассажиров, оборот %s, "
         .. "отправление со ст. %s по %s пути%s. Подтвердите: !понял",
-        order.id, reason and (reason .. " ") or "", pl.station.name, opposite.station.name, trackName(opposite),
+        order.id, reason and (reason .. " ") or "", pl.station.name,
+        sd and ("через " .. sd.name) or "по съезду",
+        opposite.station.name, trackName(opposite),
         dep and (" в " .. Line.FormatTime(dep)) or "")
     say(consist.id, order.text)
     hook.Run("Dispatcher_OrderIssued", order)

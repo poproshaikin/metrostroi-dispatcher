@@ -30,7 +30,7 @@ local function dur(s)
     return Format("%d:%02d", math.floor(s / 60), s % 60)
 end
 
-local function stName(stop) return stop.platform.station.name end
+local function stName(stop) return stop.platform.title end
 
 --------------------------------------------------------------------------------
 hook.Add("Dispatcher_StopArrive", "Dispatcher_Comms", function(cid, trip, s, dev)
@@ -104,11 +104,13 @@ local HELP = {
     "  !понял — подтвердить приказ",
     "  !оборот [станция] — запросить оборот (сократить рейс), без названия — ближайшая оборотная",
     "  !отмена — снять наряд",
+    "  !тупики — размеченные оборотные тупики; !тупик [название] — разметить (стоя в тупике у знака, админ)",
     "  !помощь — эта справка",
     "Наряд берётся, стоя у платформы на месте машиниста. Время — по станционным часам.",
 }
 local HELP_ADMIN = {
-    "Настройки (консоль сервера): dispatcher_dwell (стоянка, 30), dispatcher_turnover (оборот, 240),",
+    "Настройки (консоль сервера): dispatcher_dwell (стоянка, 30), dispatcher_turnover (оборот без тупика, 240),",
+    "  dispatcher_unload (высадка перед тупиком, 60), dispatcher_cabchange (смена кабины в тупике, 120),",
     "  dispatcher_tolerance (допуск, 15), dispatcher_orders_chance (случайные приказы, 0.03/мин),",
     "  dispatcher_learn (учиться на поездках, 1). Отладка: dispatcher_stations, dispatcher_runs, dispatcher_debug 1",
 }
@@ -132,9 +134,13 @@ local CHAT = {
     ["!понял"] = "dispatcher_ack", ["!ack"] = "dispatcher_ack",
     ["!оборот"] = "dispatcher_order_turnback", ["!turnback"] = "dispatcher_order_turnback",
     ["!помощь"] = "dispatcher_help", ["!help"] = "dispatcher_help", ["!дцх"] = "dispatcher_help",
+    ["!тупик"] = "dispatcher_siding_add", ["!siding"] = "dispatcher_siding_add",
+    ["!тупики"] = "dispatcher_sidings", ["!sidings"] = "dispatcher_sidings",
+    ["!тупик_удалить"] = "dispatcher_siding_del",
 }
 local SILENT = { dispatcher_trip = true, dispatcher_trip_cancel = true, dispatcher_ack = true,
-    dispatcher_order_turnback = true, dispatcher_help = true }
+    dispatcher_order_turnback = true, dispatcher_help = true,
+    dispatcher_siding_add = true, dispatcher_sidings = true, dispatcher_siding_del = true }
 hook.Add("PlayerSay", "Dispatcher_ChatCommands", function(ply, text)
     local args = string.Explode(" ", string.Trim(text))
     local cmd = CHAT[string.lower(args[1] or "")]

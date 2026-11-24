@@ -24,6 +24,9 @@ local cvDwell = CreateConVar("dispatcher_dwell", "30", FCVAR_ARCHIVE, "Planned d
 local cvTurn  = CreateConVar("dispatcher_turnover", "240", FCVAR_ARCHIVE, "Planned turnover time at a terminal, s")
 local cvLearn = CreateConVar("dispatcher_learn", "1", FCVAR_ARCHIVE, "Adapt run times to actual runs")
 local cvTol   = CreateConVar("dispatcher_tolerance", "15", FCVAR_ARCHIVE, "Deviation that counts as on time, s")
+local cvUnload = CreateConVar("dispatcher_unload", "60", FCVAR_ARCHIVE,
+    "Dwell at the arrival platform before going into a turnback siding (passengers leave), s")
+local cvCab   = CreateConVar("dispatcher_cabchange", "120", FCVAR_ARCHIVE, "Planned cab change time in a siding, s")
 
 local FALLBACK_SPEED = 45   -- km/h average, when Metrostroi can't estimate a run
 local MIN_DWELL      = 15   -- s, shorter dwell is reported as a violation
@@ -37,7 +40,7 @@ local RUNS_FILE = "dispatcher/runs_" .. game.GetMap():lower() .. ".json"
 local learned = util.JSONToTable(file.Read(RUNS_FILE, "DATA") or "") or {}
 
 local function runKey(a, b)
-    return Format("%d/%d>%d/%d", a.station.id, a.index, b.station.id, b.index)
+    return a.key .. ">" .. b.key
 end
 
 -- Planned run time a -> b in seconds, and where it came from.
@@ -74,17 +77,38 @@ end
 local tripCounter = 0
 
 -- Recompute planned arr/dep from the first departure, frozen runs, dwell, holds.
+--   s.dwell overrides the default dwell (unloading before a siding, cab change in it).
+--   A siding as the last stop still has a departure (after the cab change).
 function S.Recalc(trip)
     local dwell = cvDwell:GetInt()
     for j = 2, #trip.stops do
         local prev, s = trip.stops[j - 1], trip.stops[j]
         s.arr = prev.dep + s.run
-        if j == #trip.stops then
+        if j == #trip.stops and not s.platform.siding then
             s.dep = nil
         else
-            s.dep = s.arr + (s.skip and 0 or dwell) + (s.hold or 0)
+            s.dep = s.arr + (s.skip and 0 or (s.dwell or dwell)) + (s.hold or 0)
         end
     end
+end
+
+-- Finish `trip` with a turnover at its last stop. With a siding marked for that
+-- platform: unload there, go into the siding, change cabs. Without: a flat
+-- dispatcher_turnover. Returns the platform and time the next trip departs.
+function S.AppendTurnover(trip)
+    local last = trip.stops[#trip.stops]
+    if last.platform.siding then return Line.OppositePlatform(last.platform), last.dep and (last.dep + 60) end
+    local sd = Line.SidingFor(last.platform)
+    local opposite = Line.OppositePlatform(last.platform)
+    if not sd then
+        return opposite, last.arr + cvTurn:GetInt()
+    end
+    last.dwell = cvUnload:GetInt()
+    trip.stops[#trip.stops + 1] = { platform = sd, run = S.RunTime(last.platform, sd), dwell = cvCab:GetInt() }
+    S.Recalc(trip)
+    local s = trip.stops[#trip.stops]
+    -- out of the siding to the opposite platform: about as long as the way in
+    return sd.opposite or opposite, s.dep + s.run + 20 + cvDwell:GetInt()
 end
 
 -- Trip from platform `from` (departing at `depTime`) along the line to `to`
@@ -108,13 +132,11 @@ end
 -- Shift route: `count` trips back and forth, turning over at the terminals.
 function S.BuildRoute(from, depTime, count)
     local trips, pl, t = {}, from, depTime
-    for _ = 1, count do
+    for i = 1, count do
         local trip = S.BuildTrip(pl, t)
         if not trip then break end
         trips[#trips + 1] = trip
-        local last = trip.stops[#trip.stops]
-        pl = Line.OppositePlatform(last.platform)
-        t = last.arr + cvTurn:GetInt()
+        pl, t = S.AppendTurnover(trip)
         if not pl then break end
     end
     return trips
@@ -153,18 +175,22 @@ function S.Shift(trip, seconds)
     S.Recalc(trip)
 end
 
--- Short turn: end the current trip at `platform`, rebuild the rest of the shift
--- from the opposite platform.
-function S.TurnBack(a, platform)
+-- Short turn: end the current trip at `platform` (+ its siding, if marked),
+-- rebuild the rest of the shift from the opposite platform.
+-- ensureReturn: on the last trip still add one trip back to the terminal.
+function S.TurnBack(a, platform, ensureReturn)
     local trip = a.trips[a.ti]
     local _, j = findStop(trip, platform)
     if not j or j < 2 then return false end
     for k = #trip.stops, j + 1, -1 do trip.stops[k] = nil end
-    trip.stops[j].dep, trip.stops[j].skip, trip.stops[j].hold = nil, nil, nil
+    local s = trip.stops[j]
+    s.dep, s.skip, s.hold, s.dwell = nil, nil, nil, nil
+    local nextPl, nextDep = S.AppendTurnover(trip)
     local left = #a.trips - a.ti
     for k = #a.trips, a.ti + 1, -1 do a.trips[k] = nil end
-    if left > 0 then
-        local rest = S.BuildRoute(Line.OppositePlatform(platform), trip.stops[j].arr + cvTurn:GetInt(), left)
+    if left == 0 and ensureReturn then left = 1 end
+    if left > 0 and nextPl then
+        local rest = S.BuildRoute(nextPl, nextDep, left)
         for _, t in ipairs(rest) do a.trips[#a.trips + 1] = t end
     end
     return true
@@ -245,8 +271,10 @@ hook.Add("Dispatcher_Arrive", "Dispatcher_Schedule", function(consist, st, platf
     local now = Line.Now()
 
     -- Arrived at the first platform of the next trip (after turnover)
+    -- (the siding at the end may have gone unregistered: then we are one stop short)
     local nextTrip = a.trips[a.ti + 1]
-    if trip.cur == #trip.stops and nextTrip and nextTrip.stops[1].platform == platform then
+    local lastReal = #trip.stops - (trip.stops[#trip.stops].platform.siding and 1 or 0)
+    if trip.cur >= lastReal and nextTrip and nextTrip.stops[1].platform == platform then
         trip = advanceTrip(a, consist.id)
         trip.stops[1].factArr = now
         return
