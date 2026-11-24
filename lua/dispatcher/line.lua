@@ -42,25 +42,33 @@ local function build()
     if not src then return false end
     if cache.src == src and cache.stations then return true end
 
+    -- Station/Platform tables keep their identity across rebuilds and Lua reloads,
+    -- so trips and orders holding them stay valid (they compare platforms with ==).
+    Line._objs = Line._objs or { stations = {}, platforms = {} }
+    local objs = Line._objs
+
     local stations, byId, platforms = {}, {}, {}
     for id, plats in pairs(src) do
         if not isnumber(id) then continue end
-        local st = { id = id, name = stationName(id), platforms = {} }
+        local st = objs.stations[id] or {}
+        objs.stations[id] = st
+        st.id, st.name, st.platforms = id, stationName(id), {}
         for idx, p in pairs(plats) do
             local node = p.node_end or p.node_start
             if not node then continue end
-            local pl = {
-                station  = st,
-                index    = idx,
-                path     = node.path,
-                xStart   = p.x_start,
-                xEnd     = p.x_end,                 -- stop mark (head of the train)
-                dir      = p.x_end > p.x_start,     -- trains moving towards +x use it
-                length   = p.length,
-                terminal = IsValid(p.ent) and p.ent.PlatformLast or false,
-                ent      = p.ent,
-                node     = p.node_end,                -- opaque, for Line.TravelTime only
-            }
+            local key = id .. "/" .. idx
+            local pl = objs.platforms[key] or {}
+            objs.platforms[key] = pl
+            pl.station  = st
+            pl.index    = idx
+            pl.path     = node.path
+            pl.xStart   = p.x_start
+            pl.xEnd     = p.x_end                  -- stop mark (head of the train)
+            pl.dir      = p.x_end > p.x_start      -- trains moving towards +x use it
+            pl.length   = p.length
+            pl.terminal = IsValid(p.ent) and p.ent.PlatformLast or false
+            pl.ent      = p.ent
+            pl.node     = p.node_end               -- opaque, for Line.TravelTime only
             st.platforms[idx] = pl
             platforms[#platforms + 1] = pl
         end
