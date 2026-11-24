@@ -41,7 +41,7 @@ hook.Add("Dispatcher_StopArrive", "Dispatcher_Comms", function(cid, trip, s, dev
     elseif dev > tol then
         msg = Format("%s, прибытие с опозданием %s.", stName(s), dur(dev))
     elseif dev < -tol then
-        msg = Format("%s, прибыли раньше на %s, стоянку не сокращать.", stName(s), dur(dev))
+        msg = Format("%s, прибыли раньше на %s. Раньше графика не отправляться.", stName(s), dur(dev))
     else
         msg = Format("%s, по графику.", stName(s))
     end
