@@ -69,6 +69,29 @@ hook.Add("Dispatcher_Arrive", "my", function(consist, state, platform, stopError
 hook.Add("Dispatcher_Depart", "my", function(consist, state, platform) end)
 ```
 
+## Schedule (график)
+
+`lua/dispatcher/schedule.lua`. Время — то же, что на станционных часах (`Line.Now()`).
+
+- **Время хода**: оценка Метростроя (`Metrostroi.GetTravelTime`: 82% от ограничения АРС + 25 с), если не считается — по расстоянию при 45 км/ч. При `dispatcher_learn 1` уточняется по твоим реальным перегонам и сохраняется в `data/dispatcher/runs_<карта>.json`.
+- **Рейс**: от платформы до конечной, стоянка `dispatcher_dwell` (30 с), оборот на конечной `dispatcher_turnover` (240 с). Смена — цепочка рейсов туда-обратно.
+- **Слежение**: план/факт прибытия и отправления, ошибка остановки у знака, проследование без остановки, слишком короткая стоянка (< 15 с), раннее отправление. Допуск `dispatcher_tolerance` (15 с).
+
+```lua
+S.BuildTrip(fromPlatform, depTime, toPlatform?) -> Trip
+S.BuildRoute(fromPlatform, depTime, count)      -> { Trip, ... }
+S.Assign(consist, trips) / S.Cancel(consist) / S.GetAssignment(consist) / S.CurrentTrip(consist)
+S.GetStatus(consist) -> { trip, stop, plannedArr, eta, deviation }
+-- для приказов:
+S.SkipStop(trip, platform)  S.Hold(trip, platform, sec)  S.Shift(trip, sec)  S.TurnBack(assignment, platform)
+```
+
+События: `Dispatcher_StopArrive/StopDepart (cid, trip, stop, deviation)`, `Dispatcher_StopMissed (cid, trip, stop)`, `Dispatcher_TripDone (cid, trip)`, `Dispatcher_ShiftDone (cid, assignment)`.
+
+Команды: `dispatcher_trip [N]` (N рейсов от текущей платформы, по умолчанию 2), `dispatcher_schedule`, `dispatcher_trip_cancel`, `dispatcher_runs`, `dispatcher_runs_reset`.
+
+Сообщения `[ДЦХ]` в чат — `lua/dispatcher/comms.lua`.
+
 ## Карты
 
 Работает на любой карте, где у платформ (`gmod_track_platform`) есть путевая сеть Метростроя. Названия станций берутся из `Metrostroi.StationConfigurations` карты, поправить можно в `lua/dispatcher/maps/<map>.lua`. Проверяется на `gm_metro_nekrasovskaya_line_v6`.

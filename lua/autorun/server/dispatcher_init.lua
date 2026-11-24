@@ -14,6 +14,8 @@ local function load()
     Dispatcher.MapConfig = file.Exists(mapFile, "LUA") and include(mapFile) or {}
 
     include("dispatcher/line.lua")
+    include("dispatcher/schedule.lua")
+    include("dispatcher/comms.lua")
     include("dispatcher/debug.lua")
 
     MsgC(Color(120, 200, 255), "[Dispatcher] loaded, map config: ",

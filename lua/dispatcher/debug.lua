@@ -81,3 +81,95 @@ hook.Add("Dispatcher_Depart", "Dispatcher_Debug", function(c, st, pl)
     if not cvDebug:GetBool() then return end
     PrintMessage(HUD_PRINTTALK, "[Line] DEPART " .. plName(pl))
 end)
+
+--------------------------------------------------------------------------------
+-- Schedule
+--   dispatcher_trip [N]       start N trips (default 2: there and back) from your platform
+--   dispatcher_schedule       your timetable: plan vs fact
+--   dispatcher_trip_cancel    drop your timetable
+--   dispatcher_runs           run times between stations: estimate vs learned
+--   dispatcher_runs_reset     forget learned run times
+--------------------------------------------------------------------------------
+local S = Dispatcher.Schedule
+local T = Line.FormatTime
+
+local function devStr(d)
+    if not d then return "" end
+    return Format("%+d s", math.Round(d))
+end
+
+local function printTimetable(ply, a)
+    for ti, trip in ipairs(a.trips) do
+        out(ply, Format("== Trip %d%s%s", trip.id, ti == a.ti and "  <- current" or "", trip.done and "  (done)" or ""))
+        for j, s in ipairs(trip.stops) do
+            local flags = (s.skip and " SKIP" or "") .. (s.missed and " MISSED" or "") .. (s.shortDwell and " SHORT-DWELL" or "")
+            out(ply, Format("  %s %-22s arr %s %-7s dep %s %-7s run %3ds%s%s",
+                (ti == a.ti and j == trip.cur) and ">" or " ",
+                s.platform.station.name,
+                s.arr and T(s.arr) or "--:--:--", s.factArr and s.arr and devStr(s.factArr - s.arr) or "",
+                s.dep and T(s.dep) or "--:--:--", s.factDep and s.dep and devStr(s.factDep - s.dep) or "",
+                s.run, flags,
+                s.stopError and Format("  stop %+.1f m", s.stopError) or ""))
+        end
+    end
+end
+
+concommand.Add("dispatcher_trip", function(ply, _, args)
+    if not IsValid(ply) then return end
+    local c = Line.GetPlayerConsist(ply)
+    local st = Line.GetState(c)
+    if not st or not st.at or not st.stopped then
+        ply:ChatPrint("[Dispatcher] Встань на платформе станции и остановись.") return
+    end
+    local from, prep = st.at, 60
+    if not Line.NextPlatform(from) then
+        -- at the terminal arrival side: first a turnover to the departure platform
+        from, prep = Line.OppositePlatform(from), GetConVar("dispatcher_turnover"):GetInt()
+    end
+    local count = math.Clamp(tonumber(args[1]) or 2, 1, 20)
+    local dep = math.ceil((Line.Now() + prep) / 30) * 30
+    local trips = S.BuildRoute(from, dep, count)
+    if #trips == 0 then ply:ChatPrint("[Dispatcher] Не удалось построить рейс отсюда.") return end
+    local a = S.Assign(c, trips)
+    local first = trips[1]
+    Dispatcher.Comms.Say(c.id, Format("Маршрут принят: %d рейс(а). Отправление со ст. %s в %s, до ст. %s в %s. График — в консоли.",
+        #trips, first.stops[1].platform.station.name, T(first.stops[1].dep),
+        first.stops[#first.stops].platform.station.name, T(first.stops[#first.stops].arr)))
+    printTimetable(ply, a)
+end)
+
+concommand.Add("dispatcher_schedule", function(ply)
+    if not IsValid(ply) then return end
+    local a = S.GetAssignment(Line.GetPlayerConsist(ply))
+    if not a then out(ply, "no timetable, use dispatcher_trip") return end
+    out(ply, "Now " .. T(Line.Now()))
+    printTimetable(ply, a)
+end)
+
+concommand.Add("dispatcher_trip_cancel", function(ply)
+    if not IsValid(ply) then return end
+    S.Cancel(Line.GetPlayerConsist(ply))
+    ply:ChatPrint("[Dispatcher] График снят.")
+end)
+
+concommand.Add("dispatcher_runs", function(ply)
+    if not allowed(ply) then return end
+    for _, st in ipairs(Line.GetStations()) do
+        for idx, pl in SortedPairs(st.platforms) do
+            local nxt = Line.NextPlatform(pl)
+            if nxt then
+                local t, src, norm = S.RunTime(pl, nxt)
+                local d = Line.Distance(pl, nxt)
+                out(ply, Format("%-22s -> %-22s %4.0f m  %3ds (%s, estimate %ds)%s",
+                    pl.station.name, nxt.station.name, d or -1, t, src, norm,
+                    d and Format("  avg %.0f km/h", d / t * 3.6) or ""))
+            end
+        end
+    end
+end)
+
+concommand.Add("dispatcher_runs_reset", function(ply)
+    if not allowed(ply) then return end
+    S.ForgetRuns()
+    out(ply, "learned run times cleared")
+end)

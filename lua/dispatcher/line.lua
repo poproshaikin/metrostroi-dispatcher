@@ -59,6 +59,7 @@ local function build()
                 length   = p.length,
                 terminal = IsValid(p.ent) and p.ent.PlatformLast or false,
                 ent      = p.ent,
+                node     = p.node_end,                -- opaque, for Line.TravelTime only
             }
             st.platforms[idx] = pl
             platforms[#platforms + 1] = pl
@@ -106,6 +107,44 @@ function Line.NextPlatform(platform)
     return st and st.platforms[platform.index]
 end
 
+-- Line time in seconds: the same clock the station clocks show (UTC-based, as
+-- Metrostroi draws them with os.date("!...")). Use Line.FormatTime to print.
+function Line.Now()
+    return Metrostroi.GetSyncTime and Metrostroi.GetSyncTime() or os.time()
+end
+
+function Line.FormatTime(t, withSeconds)
+    return os.date(withSeconds == false and "!%H:%M" or "!%H:%M:%S", math.floor(t))
+end
+
+-- The other platform of the same station (where a train departs after turnover).
+function Line.OppositePlatform(platform)
+    if not platform then return end
+    return platform.station.platforms[platform.index == 1 and 2 or 1]
+end
+
+-- Distance between two stop marks in metres, if both are on the same track path.
+function Line.Distance(a, b)
+    if not a or not b or a.path ~= b.path then return end
+    return math.abs(b.xEnd - a.xEnd)
+end
+
+-- Normative run time stop mark -> stop mark, seconds (Metrostroi's own estimate:
+-- 82% of the ARS limit on every section + 25 s for acceleration/braking).
+-- nil if it can't be computed (different paths, no ARS data).
+local travelCache = setmetatable({}, { __mode = "k" })
+function Line.TravelTime(a, b)
+    if not a or not b or not a.node or not b.node or a.path ~= b.path then return end
+    travelCache[a] = travelCache[a] or {}
+    local c = travelCache[a][b]
+    if c == nil then
+        local ok, t = pcall(Metrostroi.GetTravelTime, a.node, b.node)
+        c = (ok and isnumber(t) and t > 0) and (t + 25) or false
+        travelCache[a][b] = c
+    end
+    return c or nil
+end
+
 --------------------------------------------------------------------------------
 -- Consists
 --------------------------------------------------------------------------------
@@ -132,6 +171,12 @@ function Line.GetConsists()
     end
     consistCache, consistTime = list, CurTime()
     return list
+end
+
+function Line.GetConsist(id)
+    for _, c in ipairs(Line.GetConsists()) do
+        if c.id == id then return c end
+    end
 end
 
 -- Consist the player drives / sits in / stands on.
