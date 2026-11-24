@@ -101,14 +101,17 @@ local CHAT = {
     ["!график"] = "dispatcher_schedule", ["!schedule"] = "dispatcher_schedule",
     ["!отмена"] = "dispatcher_trip_cancel", ["!cancel"] = "dispatcher_trip_cancel",
     ["!где"] = "dispatcher_where", ["!where"] = "dispatcher_where",
+    ["!понял"] = "dispatcher_ack", ["!ack"] = "dispatcher_ack",
+    ["!оборот"] = "dispatcher_order_turnback", ["!turnback"] = "dispatcher_order_turnback",
 }
+local SILENT = { dispatcher_trip = true, dispatcher_trip_cancel = true, dispatcher_ack = true, dispatcher_order_turnback = true }
 hook.Add("PlayerSay", "Dispatcher_ChatCommands", function(ply, text)
     local args = string.Explode(" ", string.Trim(text))
     local cmd = CHAT[string.lower(args[1] or "")]
     if not cmd then return end
     table.remove(args, 1)
     concommand.Run(ply, cmd, args, table.concat(args, " "))
-    if cmd ~= "dispatcher_trip" and cmd ~= "dispatcher_trip_cancel" then
+    if not SILENT[cmd] then
         ply:ChatPrint("[Dispatcher] Ответ в консоли (~).")
     end
     return ""

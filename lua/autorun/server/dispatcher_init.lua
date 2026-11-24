@@ -16,6 +16,7 @@ local function load()
     include("dispatcher/line.lua")
     include("dispatcher/schedule.lua")
     include("dispatcher/comms.lua")
+    include("dispatcher/orders.lua")
     include("dispatcher/debug.lua")
 
     MsgC(Color(120, 200, 255), "[Dispatcher] loaded, map config: ",
