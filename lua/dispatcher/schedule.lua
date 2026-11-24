@@ -272,13 +272,13 @@ hook.Add("Dispatcher_Arrive", "Dispatcher_Schedule", function(consist, st, platf
     end
 end)
 
-hook.Add("Dispatcher_Depart", "Dispatcher_Schedule", function(consist, st, platform)
+hook.Add("Dispatcher_Depart", "Dispatcher_Schedule", function(consist, st, platform, departTime)
     local a = S.Assignments[consist.id]
     if not a or a.finished then return end
     local trip = a.trips[a.ti]
     local s = trip.stops[trip.cur]
     if not s or s.platform ~= platform or not s.dep then return end
-    local now = Line.Now()
+    local now = departTime or Line.Now()
     s.factDep = now
     hook.Run("Dispatcher_StopDepart", consist.id, trip, s, now - s.dep)
 end)

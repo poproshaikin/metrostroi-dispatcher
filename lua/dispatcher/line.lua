@@ -13,7 +13,8 @@
 -- Events (hook.Run), fired for consists that have a driver:
 --   Dispatcher_Arrive (consist, state, platform, stopError)  stopped at a platform
 --                     stopError: metres to the stop mark (+ short, - overrun)
---   Dispatcher_Depart (consist, state, platform)             left the platform
+--   Dispatcher_Depart (consist, state, platform, departTime) left the platform;
+--                     departTime: Line.Now() when the train started moving
 --------------------------------------------------------------------------------
 Dispatcher = Dispatcher or {}
 local Line = Dispatcher.Line or {}
@@ -331,13 +332,24 @@ hook.Add("Think", "Dispatcher_LineEvents", function()
         local mem = memory[st.head]
 
         if st.at and st.stopped and mem.arrived ~= st.at then
-            mem.arrived, mem.last = st.at, st.at
+            mem.arrived, mem.last, mem.moveStart = st.at, st.at, nil
             local err = st.stop == st.at and st.distToStop or nil
             hook.Run("Dispatcher_Arrive", c, st, st.at, err)
-        elseif mem.arrived and st.at ~= mem.arrived then
-            local pl = mem.arrived
-            mem.arrived = nil
-            hook.Run("Dispatcher_Depart", c, st, pl)
+        elseif mem.arrived then
+            -- Departure time = when the train started moving, not when the head
+            -- cleared the platform (that is 15+ m and several seconds later).
+            -- Creeping up to the stop mark and stopping again resets it.
+            if st.stopped then
+                mem.moveStart = nil
+            elseif not mem.moveStart and st.speed > 1 then
+                mem.moveStart = Line.Now()
+            end
+            if st.at ~= mem.arrived then
+                local pl = mem.arrived
+                mem.arrived = nil
+                hook.Run("Dispatcher_Depart", c, st, pl, mem.moveStart or Line.Now())
+                mem.moveStart = nil
+            end
         end
     end
 end)
