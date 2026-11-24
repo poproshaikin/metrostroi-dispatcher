@@ -177,6 +177,28 @@ concommand.Add("dispatcher_runs_reset", function(ply)
 end)
 
 --------------------------------------------------------------------------------
+-- Stop mark calibration
+--   dispatcher_stopmark [all]   stand with the cab at the real stop sign
+--   dispatcher_stopmark_reset
+--------------------------------------------------------------------------------
+concommand.Add("dispatcher_stopmark", function(ply, _, args)
+    if not IsValid(ply) then return end
+    if not allowed(ply) then ply:ChatPrint("[Dispatcher] Калибровать знаки может только суперадмин.") return end
+    local all = args[1] == "all" or args[1] == "все"
+    local offset, pl = Line.CalibrateStopMark(Line.GetPlayerConsist(ply), all)
+    if not offset then ply:ChatPrint("[Dispatcher] Не удалось: " .. pl .. ".") return end
+    ply:ChatPrint(Format("[Dispatcher] Знак остановки %s: %+.1f м от конца платформы. %s",
+        all and "для всех платформ" or ("ст. " .. pl.station.name .. ", путь " .. pl.index), offset,
+        all and "Платформы с собственной калибровкой не тронуты." or "Действует сразу."))
+end)
+
+concommand.Add("dispatcher_stopmark_reset", function(ply)
+    if IsValid(ply) and not allowed(ply) then return end
+    Line.ResetStopMarks()
+    if IsValid(ply) then ply:ChatPrint("[Dispatcher] Калибровка знаков сброшена.") else print("stop marks reset") end
+end)
+
+--------------------------------------------------------------------------------
 -- Sidings (turnback dead ends)
 --   dispatcher_siding_add [name]   mark: stand in the dead end at the stop mark
 --   dispatcher_siding_del <name>

@@ -105,6 +105,7 @@ local HELP = {
     "  !оборот [станция] — запросить оборот (сократить рейс), без названия — ближайшая оборотная",
     "  !отмена — снять наряд",
     "  !тупики — размеченные оборотные тупики; !тупик [название] — разметить (стоя в тупике у знака, админ)",
+    "  !знак — откалибровать знак остановки этой платформы (встать кабиной точно у знака, админ); !знак все — для всех",
     "  !помощь — эта справка",
     "Наряд берётся, стоя у платформы на месте машиниста. Время — по станционным часам.",
 }
@@ -137,10 +138,13 @@ local CHAT = {
     ["!тупик"] = "dispatcher_siding_add", ["!siding"] = "dispatcher_siding_add",
     ["!тупики"] = "dispatcher_sidings", ["!sidings"] = "dispatcher_sidings",
     ["!тупик_удалить"] = "dispatcher_siding_del",
+    ["!знак"] = "dispatcher_stopmark", ["!stopmark"] = "dispatcher_stopmark",
+    ["!знак_сброс"] = "dispatcher_stopmark_reset",
 }
 local SILENT = { dispatcher_trip = true, dispatcher_trip_cancel = true, dispatcher_ack = true,
     dispatcher_order_turnback = true, dispatcher_help = true,
-    dispatcher_siding_add = true, dispatcher_sidings = true, dispatcher_siding_del = true }
+    dispatcher_siding_add = true, dispatcher_sidings = true, dispatcher_siding_del = true,
+    dispatcher_stopmark = true, dispatcher_stopmark_reset = true }
 hook.Add("PlayerSay", "Dispatcher_ChatCommands", function(ply, text)
     local args = string.Explode(" ", string.Trim(text))
     local cmd = CHAT[string.lower(args[1] or "")]

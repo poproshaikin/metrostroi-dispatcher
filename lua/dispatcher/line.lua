@@ -66,8 +66,10 @@ local function build()
             pl.index    = idx
             pl.path     = node.path
             pl.xStart   = p.x_start
-            pl.xEnd     = p.x_end                  -- stop mark (head of the train)
             pl.dir      = p.x_end > p.x_start      -- trains moving towards +x use it
+            -- stop mark (head of the train): platform end, moved by a calibration if any
+            pl.xEndRaw  = p.x_end
+            pl.xEnd     = p.x_end + (pl.dir and 1 or -1) * Line.StopMarkOffset(key)
             pl.length   = p.length
             pl.terminal = IsValid(p.ent) and p.ent.PlatformLast or false
             pl.ent      = p.ent
@@ -130,6 +132,48 @@ local function build()
     cache = { src = src, stations = stations, byId = byId, platforms = platforms, orderDir = orderDir,
               sidings = sidings, sidingsVersion = Line._sidingsVersion }
     return true
+end
+
+--------------------------------------------------------------------------------
+-- Stop mark calibration (!знак): where on the platform the head should stop,
+-- in metres along the direction of travel relative to the platform end
+-- (negative = before it). Per platform, or a default for the whole map.
+--------------------------------------------------------------------------------
+local MARKS_FILE = "dispatcher/stopmarks_" .. game.GetMap():lower() .. ".json"
+
+local function marks()
+    if not Line._stopMarks then
+        Line._stopMarks = util.JSONToTable(file.Read(MARKS_FILE, "DATA") or "") or {}
+    end
+    return Line._stopMarks
+end
+
+function Line.StopMarkOffset(key)
+    local m = marks()
+    local cfg = (Dispatcher.MapConfig or {}).stopMarks or {}
+    return m[key] or cfg[key] or m.default or cfg.default or 0
+end
+
+-- Calibrate with the train standing at the real stop sign of its platform.
+-- all = true: use this offset as the default for every platform without its own.
+function Line.CalibrateStopMark(consist, all)
+    local st = Line.GetState(consist)
+    if not st or not st.at or st.at.siding then return nil, "встань у знака остановки на платформе" end
+    if not st.stopped then return nil, "остановись" end
+    local pl = st.at
+    local offset = (st.x - pl.xEndRaw) * (pl.dir and 1 or -1)
+    local m = marks()
+    if all then m.default = offset else m[pl.key] = offset end
+    file.CreateDir("dispatcher")
+    file.Write(MARKS_FILE, util.TableToJSON(m, true))
+    Line._sidingsVersion = (Line._sidingsVersion or 0) + 1   -- rebuild platforms
+    return offset, pl
+end
+
+function Line.ResetStopMarks()
+    Line._stopMarks = {}
+    file.Delete(MARKS_FILE)
+    Line._sidingsVersion = (Line._sidingsVersion or 0) + 1
 end
 
 --------------------------------------------------------------------------------
@@ -389,7 +433,10 @@ function Line.GetState(consist)
 
     -- Near switches / parallel tracks several track paths can be under the cab.
     -- Pick: the one along a platform > the one we were on before > the nearest.
-    local front = head:LocalToWorld(Vector(CAB_FRONT * cabSign, 0, 0))
+    -- Cab end from the wagon's own bounds (differs per series), not a constant
+    local fx = cabSign > 0 and head:OBBMaxs().x or head:OBBMins().x
+    if math.abs(fx) < 300 or math.abs(fx) > 700 then fx = CAB_FRONT * cabSign end   -- odd bounds: fallback
+    local front = head:LocalToWorld(Vector(fx, 0, 0))
     local positions = Metrostroi.GetPositionOnTrack(front, head:GetAngles())
     st.onTrack = positions[1] ~= nil
     if not st.onTrack then return st end
