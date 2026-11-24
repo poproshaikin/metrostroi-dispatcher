@@ -264,15 +264,34 @@ function Line.GetState(consist)
     memory[head] = mem
     st.last = mem.last
 
+    -- Near switches / parallel tracks several track paths can be under the cab.
+    -- Pick: the one along a platform > the one we were on before > the nearest.
     local front = head:LocalToWorld(Vector(CAB_FRONT * cabSign, 0, 0))
-    local pos = Metrostroi.GetPositionOnTrack(front, head:GetAngles())[1]
-    st.onTrack = pos ~= nil
-    if not pos then return st end
+    local positions = Metrostroi.GetPositionOnTrack(front, head:GetAngles())
+    st.onTrack = positions[1] ~= nil
+    if not st.onTrack then return st end
 
-    st.path, st.x = pos.path, pos.x
-    st.dirPlus = (pos.forward == (cabSign > 0))
-
-    local at, stop, dist = locate(pos.path, pos.x, st.dirPlus)
+    local pos, at, stop, dist
+    for i, p in ipairs(positions) do
+        -- distance = units from the track axis (incl. height of the body); a parallel
+        -- track is ~200 units away, a switch branch that we are actually on is close
+        if p.distance > positions[1].distance + 100 then break end
+        local dirPlus = (p.forward == (cabSign > 0))
+        local a, s, d = locate(p.path, p.x, dirPlus)
+        local score = (a and 3 or 0) + (p.path == mem.path and 2 or 0) + (s and 1 or 0)
+        if not pos or score > pos.score then
+            pos = { p = p, dirPlus = dirPlus, score = score }
+            at, stop, dist = a, s, d
+        end
+    end
+    if not pos then
+        local p = positions[1]
+        pos = { p = p, dirPlus = (p.forward == (cabSign > 0)) }
+        at, stop, dist = locate(p.path, p.x, pos.dirPlus)
+    end
+    st.path, st.x, st.dirPlus = pos.p.path, pos.p.x, pos.dirPlus
+    st.trackCandidates = #positions
+    mem.path = st.path
     st.at = at
     if at then mem.passed = at end   -- passed through, stopped or not
     if stop then

@@ -47,7 +47,8 @@ local function describe(st)
     if not st.onTrack then
         lines[#lines + 1] = "OFF TRACK"
     else
-        lines[#lines + 1] = Format("path #%d  x %.1f  dir %s", st.path.id, st.x, st.dirPlus and "+x" or "-x")
+        lines[#lines + 1] = Format("path #%d  x %.1f  dir %s  (tracks under cab: %d)", st.path.id, st.x,
+            st.dirPlus and "+x" or "-x", st.trackCandidates or 1)
         lines[#lines + 1] = "at: " .. plName(st.at)
         lines[#lines + 1] = Format("stop: %s  %s", plName(st.stop),
             st.distToStop and Format("%.1f m", st.distToStop) or "(distance unknown)")
