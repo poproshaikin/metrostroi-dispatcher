@@ -1,0 +1,12 @@
+{
+	"title"       : "Metrostroi Dispatcher",
+	"type"        : "servercontent",
+	"tags"        : [ "realism", "roleplay" ],
+	"ignore"      :
+	[
+		"*.md",
+		".git*",
+		"*.psd",
+		"*.jpg"
+	]
+}
