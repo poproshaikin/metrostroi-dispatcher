@@ -95,6 +95,34 @@ hook.Add("Dispatcher_ShiftDone", "Dispatcher_Comms", function(cid, a)
         #a.trips, onTime, total, missed))
 end)
 
+-- Help
+local HELP = {
+    "Диспетчер ДЦХ — команды в чат:",
+    "  !рейс [N] — взять наряд: N рейсов от текущей платформы (по умолчанию 2, туда и обратно)",
+    "  !график — план и факт по станциям (в консоли ~)",
+    "  !где — что диспетчер видит про твой поезд (в консоли ~)",
+    "  !понял — подтвердить приказ",
+    "  !оборот [станция] — запросить оборот (сократить рейс), без названия — ближайшая оборотная",
+    "  !отмена — снять наряд",
+    "  !помощь — эта справка",
+    "Наряд берётся, стоя у платформы на месте машиниста. Время — по станционным часам.",
+}
+local HELP_ADMIN = {
+    "Настройки (консоль сервера): dispatcher_dwell (стоянка, 30), dispatcher_turnover (оборот, 240),",
+    "  dispatcher_tolerance (допуск, 15), dispatcher_orders_chance (случайные приказы, 0.03/мин),",
+    "  dispatcher_learn (учиться на поездках, 1). Отладка: dispatcher_stations, dispatcher_runs, dispatcher_debug 1",
+}
+
+concommand.Add("dispatcher_help", function(ply)
+    local lines = table.Copy(HELP)
+    if not IsValid(ply) or game.SinglePlayer() or ply:IsSuperAdmin() then
+        for _, l in ipairs(HELP_ADMIN) do lines[#lines + 1] = l end
+    end
+    for _, l in ipairs(lines) do
+        if IsValid(ply) then ply:ChatPrint(l) else print(l) end
+    end
+end)
+
 -- Chat commands -> console commands
 local CHAT = {
     ["!рейс"] = "dispatcher_trip", ["!trip"] = "dispatcher_trip",
@@ -103,8 +131,10 @@ local CHAT = {
     ["!где"] = "dispatcher_where", ["!where"] = "dispatcher_where",
     ["!понял"] = "dispatcher_ack", ["!ack"] = "dispatcher_ack",
     ["!оборот"] = "dispatcher_order_turnback", ["!turnback"] = "dispatcher_order_turnback",
+    ["!помощь"] = "dispatcher_help", ["!help"] = "dispatcher_help", ["!дцх"] = "dispatcher_help",
 }
-local SILENT = { dispatcher_trip = true, dispatcher_trip_cancel = true, dispatcher_ack = true, dispatcher_order_turnback = true }
+local SILENT = { dispatcher_trip = true, dispatcher_trip_cancel = true, dispatcher_ack = true,
+    dispatcher_order_turnback = true, dispatcher_help = true }
 hook.Add("PlayerSay", "Dispatcher_ChatCommands", function(ply, text)
     local args = string.Explode(" ", string.Trim(text))
     local cmd = CHAT[string.lower(args[1] or "")]
@@ -125,7 +155,7 @@ hook.Add("PlayerEnteredVehicle", "Dispatcher_Hint", function(ply)
         local st = c and Line.GetState(c)
         if not st or st.driver ~= ply or S.GetAssignment(c) then return end
         if st.at then
-            ply:ChatPrint(PREFIX .. Format("Машинист, вы на ст. %s. Для наряда напишите !рейс (или !рейс 4 — четыре рейса).", st.at.station.name))
+            ply:ChatPrint(PREFIX .. Format("Машинист, вы на ст. %s. Для наряда напишите !рейс (или !рейс 4 — четыре рейса). Все команды: !помощь", st.at.station.name))
         else
             ply:ChatPrint(PREFIX .. "Для наряда встаньте на платформу и напишите !рейс.")
         end
