@@ -95,6 +95,40 @@ hook.Add("Dispatcher_ShiftDone", "Dispatcher_Comms", function(cid, a)
         #a.trips, onTime, total, missed))
 end)
 
+-- Chat commands -> console commands
+local CHAT = {
+    ["!рейс"] = "dispatcher_trip", ["!trip"] = "dispatcher_trip",
+    ["!график"] = "dispatcher_schedule", ["!schedule"] = "dispatcher_schedule",
+    ["!отмена"] = "dispatcher_trip_cancel", ["!cancel"] = "dispatcher_trip_cancel",
+    ["!где"] = "dispatcher_where", ["!where"] = "dispatcher_where",
+}
+hook.Add("PlayerSay", "Dispatcher_ChatCommands", function(ply, text)
+    local args = string.Explode(" ", string.Trim(text))
+    local cmd = CHAT[string.lower(args[1] or "")]
+    if not cmd then return end
+    table.remove(args, 1)
+    concommand.Run(ply, cmd, args, table.concat(args, " "))
+    if cmd ~= "dispatcher_trip" and cmd ~= "dispatcher_trip_cancel" then
+        ply:ChatPrint("[Dispatcher] Ответ в консоли (~).")
+    end
+    return ""
+end)
+
+-- Hint when someone takes the driver's seat without a timetable
+hook.Add("PlayerEnteredVehicle", "Dispatcher_Hint", function(ply)
+    timer.Simple(1, function()
+        if not IsValid(ply) then return end
+        local c = Line.GetPlayerConsist(ply)
+        local st = c and Line.GetState(c)
+        if not st or st.driver ~= ply or S.GetAssignment(c) then return end
+        if st.at then
+            ply:ChatPrint(PREFIX .. Format("Машинист, вы на ст. %s. Для наряда напишите !рейс (или !рейс 4 — четыре рейса).", st.at.station.name))
+        else
+            ply:ChatPrint(PREFIX .. "Для наряда встаньте на платформу и напишите !рейс.")
+        end
+    end)
+end)
+
 -- Running late in the tunnel: one reminder per run
 timer.Create("Dispatcher_CommsLate", 5, 0, function()
     for cid, a in pairs(S.Assignments) do
