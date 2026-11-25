@@ -29,7 +29,7 @@ local cvUnload = CreateConVar("dispatcher_unload", "60", FCVAR_ARCHIVE,
 local cvCab   = CreateConVar("dispatcher_cabchange", "120", FCVAR_ARCHIVE, "Planned cab change time in a siding, s")
 local cvDepotRun  = CreateConVar("dispatcher_depot_run", "300", FCVAR_ARCHIVE,
     "Planned run between a depot track and the line (until learned), s")
-local cvDepotPrep = CreateConVar("dispatcher_depot_prep", "180", FCVAR_ARCHIVE,
+local cvDepotPrep = CreateConVar("dispatcher_depot_prep", "420", FCVAR_ARCHIVE,
     "Time to prepare the train before leaving the depot, s")
 
 local FALLBACK_SPEED = 45   -- km/h average, when Metrostroi can't estimate a run
@@ -504,6 +504,40 @@ hook.Add("Dispatcher_StopDepart", "Dispatcher_ScheduleChecks", function(cid, tri
 end)
 
 S.Tolerance = function() return cvTol:GetInt() end
+
+-- Move the plan of the current stop and everything after it by `secs`
+-- (facts and stops already passed stay as they are).
+function S.ShiftAhead(a, secs)
+    local trip = a.trips[a.ti]
+    for j = trip.cur or 1, #trip.stops do
+        local s = trip.stops[j]
+        if s.arr and not s.factArr then s.arr = s.arr + secs end
+        if s.dep then s.dep = s.dep + secs end
+    end
+    for i = a.ti + 1, #a.trips do
+        for _, s in ipairs(a.trips[i].stops) do
+            if s.arr then s.arr = s.arr + secs end
+            if s.dep then s.dep = s.dep + secs end
+        end
+    end
+end
+
+-- "Train ready" at the start of a trip (depot, first platform, after a turnover):
+-- the departure moves up to `lead` seconds from now. Returns new dep, or nil + reason.
+function S.ReportReady(consist, lead)
+    local a = S.GetAssignment(consist)
+    if not a or a.finished then return nil, "нет наряда" end
+    local trip = a.trips[a.ti]
+    local s = trip.stops[trip.cur or 1]
+    if (trip.cur or 1) ~= 1 or not s or not s.dep or s.factDep then
+        return nil, "доклад о готовности — перед отправлением в рейс (из депо, с первой станции, после оборота)"
+    end
+    local now = Line.Now()
+    local newDep = math.ceil((now + lead) / 30) * 30
+    if newDep >= s.dep then return s.dep, "по графику" end
+    S.ShiftAhead(a, newDep - s.dep)
+    return newDep
+end
 
 -- Restored from a save and the driver hasn't taken the seat yet: the timetable
 -- waits (no lateness, no orders) — see persist.lua

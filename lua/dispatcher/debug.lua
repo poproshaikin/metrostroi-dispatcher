@@ -193,6 +193,30 @@ concommand.Add("dispatcher_schedule", function(ply)
     printTimetable(ply, a)
 end)
 
+-- "Train ready": depart earlier than planned (from the depot, the first station, after a turnover)
+concommand.Add("dispatcher_ready", function(ply)
+    if not IsValid(ply) then return end
+    local c = Line.GetPlayerConsist(ply)
+    local a = S.GetAssignment(c)
+    if not a then Dispatcher.Chat(ply, "[Dispatcher] Нет наряда: !рейс") return end
+    local trip = a.trips[a.ti]
+    local s = trip.stops[trip.cur or 1]
+    local order = Dispatcher.Orders and Dispatcher.Orders.Active[c.id]
+    if order and order.kind == "hold" and order.stop == s then
+        Dispatcher.Comms.Say(c.id, "Отказано: действует приказ на задержку отправления.") return
+    end
+    local old = s and s.dep
+    local dep, why = S.ReportReady(c, 60)
+    if not dep then Dispatcher.Chat(ply, "[Dispatcher] " .. why .. ".") return end
+    if why then
+        Dispatcher.Comms.Say(c.id, "Готовность принята. Отправление по графику в " .. T(dep) .. ".")
+    else
+        local earlier = math.Round(old - dep)
+        Dispatcher.Comms.Say(c.id, Format("Готовность принята. Отправление в %s, на %d мин %02d с раньше. График сдвинут.",
+            T(dep), math.floor(earlier / 60), earlier % 60))
+    end
+end)
+
 concommand.Add("dispatcher_trip_cancel", function(ply)
     if not IsValid(ply) then return end
     S.Cancel(Line.GetPlayerConsist(ply))
