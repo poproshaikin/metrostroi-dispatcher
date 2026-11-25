@@ -349,6 +349,12 @@ concommand.Add("dispatcher_export", function(ply)
     cfg.stopMarks = util.JSONToTable(file.Read("dispatcher/stopmarks_" .. game.GetMap():lower() .. ".json", "DATA") or "") or cfg.stopMarks
     local dd = D.Data()
     cfg.depotTracks, cfg.depotExit, cfg.depotEntry = dd.tracks, dd.exit, dd.entry
+    -- learned run times, rounded: a good starting timetable for everyone
+    local runs = util.JSONToTable(file.Read("dispatcher/runs_" .. game.GetMap():lower() .. ".json", "DATA") or "")
+    if runs then
+        for k, v in pairs(runs) do runs[k] = math.Round(v) end
+        cfg.runs = runs
+    end
 
     local function ser(v, ind)
         ind = ind or ""

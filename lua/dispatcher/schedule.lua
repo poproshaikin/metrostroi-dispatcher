@@ -41,7 +41,9 @@ S.Assignments = S.Assignments or {}   -- [consist id] = assignment
 -- Run times: Metrostroi estimate, refined by actual runs (saved per map)
 --------------------------------------------------------------------------------
 local RUNS_FILE = "dispatcher/runs_" .. game.GetMap():lower() .. ".json"
-local learned = util.JSONToTable(file.Read(RUNS_FILE, "DATA") or "") or {}
+-- saved on this server, else the run times shipped in the map config
+local learned = util.JSONToTable(file.Read(RUNS_FILE, "DATA") or "")
+    or table.Copy((Dispatcher.MapConfig or {}).runs or {})
 
 local function runKey(a, b)
     return a.key .. ">" .. b.key
