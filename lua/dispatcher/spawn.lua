@@ -280,7 +280,7 @@ function SP.SpawnTrain(fam, wagnum, path, xFront, dirPlus, owner, onFail)
         local rot = i > 1 and ((i == wagnum) or math.random() > 0.5)
         local cls = (i == 1 or i == wagnum) and fam.head or fam.interim
         local ent = ents.Create(cls)
-        if not IsValid(ent) then break end
+        if not IsValid(ent) then MsgC(Color(255, 120, 80), "[Dispatcher] Can't create ", cls, "\n") break end
         ent.DispatcherSpawned = true
         ent.Owner = owner
         placeCar(ent, path, xNextFront - s * 9.75, s, rot)   -- rough spot, the model is not loaded yet
