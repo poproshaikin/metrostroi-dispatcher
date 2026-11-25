@@ -54,6 +54,11 @@ hook.Add("Dispatcher_StopArrive", "Dispatcher_Comms", function(cid, trip, s, dev
     -- next is the turnback dead end: say which track (there may be two)
     local nxt = trip.stops[(trip.cur or 1) + 1]
     if nxt and nxt.platform.siding then msg = msg .. " Оборот через " .. nxt.platform.title .. "." end
+    -- next is the depot: which track to go to
+    if nxt and nxt.platform.depot then
+        msg = msg .. Format(" После высадки следуйте в депо: постановка на путь %s (канава %s) в %s.",
+            nxt.platform.name, nxt.platform.name, Line.FormatTime(nxt.arr))
+    end
     -- last stop and the next trip leaves from here backwards: turn on the platform
     local a = S.Assignments[cid]
     local nt = a and a.trips[a.ti + 1]
