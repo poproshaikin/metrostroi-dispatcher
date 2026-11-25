@@ -206,12 +206,40 @@ function Line.GetSidings()
     return cache.sidings
 end
 
--- Siding where a train that arrived at `platform` goes for the cab change.
-function Line.SidingFor(platform)
-    if not build() or not platform or platform.siding then return end
+-- All sidings a train that arrived at `platform` can go to for the cab change
+-- (a turnback with two dead-end tracks = two sidings of the same platform).
+function Line.SidingsFor(platform)
+    if not build() or not platform or platform.siding then return {} end
+    local list = {}
     for _, sd in ipairs(cache.sidings) do
-        if sd.station == platform.station and sd.from == platform.index then return sd end
+        if sd.station == platform.station and sd.from == platform.index then list[#list + 1] = sd end
     end
+    return list
+end
+
+-- Is a train standing in this siding (or planned into it by another timetable)?
+function Line.SidingBusy(sd, exceptConsist)
+    for id, mem in pairs(Line._memory or {}) do
+        if id ~= (exceptConsist and exceptConsist.id) and mem.arrived == sd then return true end
+    end
+    return false
+end
+
+-- Siding to plan for: a free one if there are several, alternating between them.
+function Line.SidingFor(platform, exceptConsist)
+    local list = Line.SidingsFor(platform)
+    if #list <= 1 then return list[1] end
+    Line._sidingTurn = (Line._sidingTurn or 0) + 1
+    for i = 0, #list - 1 do
+        local sd = list[(Line._sidingTurn + i) % #list + 1]
+        if not Line.SidingBusy(sd, exceptConsist) then return sd end
+    end
+    return list[Line._sidingTurn % #list + 1]
+end
+
+-- Two sidings serving the same turnback (either track will do)
+function Line.SameTurnback(a, b)
+    return a == b or (a and b and a.siding and b.siding and a.station == b.station and a.from == b.from)
 end
 
 -- Mark the current cab position of `consist` as a siding stop mark.

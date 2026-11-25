@@ -359,7 +359,9 @@ hook.Add("Dispatcher_Arrive", "Dispatcher_Schedule", function(consist, st, platf
 
     for j = trip.cur + 1, #trip.stops do
         local s = trip.stops[j]
-        if s.platform == platform then
+        if Line.SameTurnback(s.platform, platform) then
+            -- the other track of a two-track turnback counts too
+            if s.platform ~= platform then s.plannedPlatform, s.platform = s.platform, platform end
             -- Everything between was passed without stopping
             for k = trip.cur + 1, j - 1 do
                 local m = trip.stops[k]

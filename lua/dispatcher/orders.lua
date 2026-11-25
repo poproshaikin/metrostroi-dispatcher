@@ -137,7 +137,8 @@ function O.IssueTurnback(consist, stop, reason)
     local nextTrip = a.trips[a.ti + 1]
     local opposite = nextTrip and nextTrip.stops[1].platform or Line.OppositePlatform(pl)
     if not opposite then return nil, "no opposite platform" end
-    local sd = Line.SidingFor(pl)
+    local lastStop = trip.stops[#trip.stops]
+    local sd = lastStop.platform.siding and lastStop.platform   -- the siding the plan picked
     local dep = nextTrip and nextTrip.stops[1].dep
 
     local order = newOrder(consist, "turnback", trip, stop, reason)

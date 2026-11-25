@@ -51,6 +51,10 @@ hook.Add("Dispatcher_StopArrive", "Dispatcher_Comms", function(cid, trip, s, dev
         end
     end
     if s.dep then msg = msg .. " Отправление в " .. Line.FormatTime(s.dep) .. "." end
+    -- next is the turnback dead end: say which track (there may be two)
+    local nxt = trip.stops[(trip.cur or 1) + 1]
+    if nxt and nxt.platform.siding then msg = msg .. " Оборот через " .. nxt.platform.title .. "." end
+    if s.plannedPlatform then msg = msg .. Format(" (назначен был %s — принято.)", s.plannedPlatform.title) end
     Comms.Say(cid, msg)
 end)
 
