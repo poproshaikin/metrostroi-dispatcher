@@ -156,8 +156,8 @@ function G.Build()
                 S.path.links = S.path.links or {}
                 table.insert(S.path.links, L)
             elseif r.next == "X" and #r.order > 0 then
-                -- a route with no signal after it (Лухмановская: through т3/т4 straight
-                -- into the depot). It leaves along the path of its last switch.
+                -- a route with no signal after it: where it leads is unknown (the
+                -- ladders are not in the track data). Only a hint: its last switch's path.
                 local sw = Metrostroi.GetSwitchByName(r.order[#r.order])
                 local tp = IsValid(sw) and sw.TrackPosition
                 local V = tp and tp.path and g.paths[tp.path.id]
@@ -174,11 +174,6 @@ function G.Build()
     end
     for _, L in ipairs(g.links) do
         if L.from.path ~= L.to.path then L.from.path.reach[L.to.path.id] = true end
-    end
-    for _, S in ipairs(g.signals) do
-        for _, r in ipairs(S.routes) do
-            if r.via then S.path.reach[r.via.id] = true end
-        end
     end
 
     -- Path ends that stop short of the depot: depot tracks are usually not in the

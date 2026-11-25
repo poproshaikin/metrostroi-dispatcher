@@ -78,39 +78,44 @@ function R.IsSet(S, r)
     return true
 end
 
+-- A route with no signal after it ("X"): where it leads is not known from the
+-- data (the ladders are not in the track data). Never chosen automatically.
+local function noSignal(r) return not r.target and r.next == "X" end
+
 -- What is the route's target path (where the train ends up)
 local function targetPath(S, r)
     if r.target then return r.target.path end
-    if r.via then return r.via end   -- "X": no signal after it, leaves along its last switch's path
     return S.path   -- "*": on to the line, stays on this path
 end
 
--- A route into the depot past a dead end ("X" route onto a path that ends at the depot)
-local function intoDepot(r)
-    return r.via and not r.target and r.via.kind == "depotlink"
-end
-
-local function sidingName(P)
+-- Name of what lies at x on path P: a siding (only near its end mark) or the
+-- nearest platform. The same path can hold a platform here and a dead end at the
+-- other end of the line (path #1: Некрасовка … Нижегородская т3).
+local function placeAt(P, x)
     for _, sd in ipairs(Line.GetSidings()) do
-        if sd.path and sd.path.id == P.id then return sd.name end
+        if sd.path and sd.path.id == P.id and sd.xEnd and math.abs(sd.xEnd - x) < 400 then return sd.name end
     end
+    local best, bestD
+    for _, pl in ipairs(P.platforms) do
+        local d = math.abs((pl.xEnd or 0) - x)
+        if not pl.siding and (not bestD or d < bestD) then best, bestD = pl, d end
+    end
+    if best and bestD < 1500 then return best.station.name .. " (путь " .. (best.index or "?") .. ")" end
+    if P.kind == "depotlink" then return "путь #" .. P.id .. " (к депо)" end
+    return "путь #" .. P.id
 end
 
 local function describeTarget(S, r)
-    local P = targetPath(S, r)
-    if intoDepot(r) then
-        local via = sidingName(P)
-        return via and ("депо (через " .. via .. ")") or ("депо (через путь #" .. P.id .. ")")
+    if r.target then return placeAt(r.target.path, r.target.x) .. ", светофор " .. (r.target.name or "?") end
+    if noSignal(r) then return "без светофора впереди" end
+    -- "*": on along this path, to the next platform in the signal's direction
+    local best, bestD
+    for _, pl in ipairs(S.path.platforms) do
+        local d = ((pl.xEnd or 0) - S.x) * S.dir
+        if not pl.siding and d > 0 and (not bestD or d < bestD) then best, bestD = pl, d end
     end
-    local sd = sidingName(P)
-    if r.via and not r.target then
-        -- past the dead end's signal, further along its track (Некрасовка: the track goes on ~130 m)
-        return "дальше за " .. (sd or ("путь #" .. P.id)) .. " (без светофора)"
-    end
-    if sd then return sd end
-    if P.kind == "depotlink" then return "путь #" .. P.id .. " (к депо)" end
-    if P.platforms[1] then return P.platforms[1].station.name .. " (путь #" .. P.id .. ")" end
-    return "путь #" .. P.id
+    if best then return "на " .. best.station.name .. " (путь " .. (best.index or "?") .. ")" end
+    return "дальше по пути #" .. S.path.id
 end
 
 --------------------------------------------------------------------------------
@@ -192,30 +197,29 @@ function R.Choose(S, consist)
     local g = G.Get()
     local want = plannedPath(consist)
     if want then
-        -- 0) to the depot: straight in past the dead end, 1) straight to the wanted
-        -- path, 2) to a path that can reach it
-        if want == "depot" then
-            for _, r in ipairs(S.routes) do if intoDepot(r) then return r, "plan" end end
+        -- 1) straight to the wanted path, 2) to a path that can reach it
+        -- (routes without a signal after them are never picked: unknown where they go)
+        for _, r in ipairs(S.routes) do
+            local P = targetPath(S, r)
+            if not noSignal(r) and ((want == "depot" and P.kind == "depotlink") or P.id == want) then return r, "plan" end
         end
         for _, r in ipairs(S.routes) do
             local P = targetPath(S, r)
-            if (want == "depot" and P.kind == "depotlink") or P.id == want then return r, "plan" end
-        end
-        for _, r in ipairs(S.routes) do
-            local P = targetPath(S, r)
-            if want ~= "depot" and P.reach[want] then return r, "plan" end
+            if not noSignal(r) and want ~= "depot" and P.reach[want] then return r, "plan" end
         end
     end
     -- no plan (or it does not go through here): keep what is set by hand, else straight
     for _, r in ipairs(S.routes) do
-        if next(r.switches) ~= nil and R.IsSet(S, r) then return nil, "set" end
+        if not noSignal(r) and next(r.switches) ~= nil and R.IsSet(S, r) then return nil, "set" end
     end
     for _, r in ipairs(S.routes) do
+        if noSignal(r) then continue end
         local straight = true
         for _, pos in pairs(r.switches) do if pos ~= "main" then straight = false end end
         if straight then return r, "default" end
     end
-    return S.routes[1], "default"
+    for _, r in ipairs(S.routes) do if not noSignal(r) then return r, "default" end end
+    return nil, "set"
 end
 
 --------------------------------------------------------------------------------
