@@ -242,109 +242,124 @@ end
 
 -- Spawn `wagnum` cars of family `fam`: the head car's front at path x `xFront`,
 -- facing `dirPlus` (towards +x of the path), the rest behind it.
-function SP.SpawnTrain(fam, wagnum, path, xFront, dirPlus, owner)
+--
+-- Every car is put on the rails at its own spot along the path (like the save
+-- addon restores trains), the next one moved so that the coupling points of
+-- the two facing couplers meet, then the couplers are joined directly. No
+-- pushing the cars together with motors (that blew one up).
+local function couplePoint(c) return c:LocalToWorld(c.CouplingPointOffset or Vector(65, 0, 0)) end
+
+local function placeCar(ent, path, xCenter, s, rot)
+    local pos, dir = SP.TrackAt(path, xCenter)
+    local fwd = dir * (s * (rot and -1 or 1))
+    ent:SetPos(pos + Vector(0, 0, 60))
+    ent:SetAngles(Angle(0, fwd:Angle().y, 0))
+    for _, part in ipairs({ ent.FrontBogey, ent.RearBogey, ent.FrontCouple, ent.RearCouple }) do
+        if IsValid(part) and part.SpawnPos then
+            part:SetPos(ent:LocalToWorld(part.SpawnPos))
+            if part.SpawnAng then part:SetAngles(ent:LocalToWorldAngles(part.SpawnAng)) end
+        end
+    end
+    return dir * s   -- travel direction of the train
+end
+
+local function removeAll(trains)
+    for _, t in ipairs(trains) do if IsValid(t) then t:Remove() end end
+end
+
+function SP.SpawnTrain(fam, wagnum, path, xFront, dirPlus, owner, onFail)
     local ENTH = scripted_ents.Get(fam.head)
     if not ENTH then return nil, "серия не установлена" end
     local s = dirPlus and 1 or -1
-
-    -- first car: centre half a car behind the front
-    local first = ents.Create(fam.head)
-    if not IsValid(first) then return nil, "не удалось создать вагон" end
-    local half = (first:OBBMaxs().x - first:OBBMins().x) / 2 * U2M
-    if half < 5 then half = 9.6 end
-    local pos, dir = SP.TrackAt(path, xFront - s * half)
-    dir = dir * s
-    first:SetPos(pos + Vector(0, 0, 60))
-    first:SetAngles(Angle(0, dir:Angle().y, 0))
-    first.Owner = owner
-    first:Spawn()
-    first:Activate()
-    Metrostroi.RerailTrain(first)
-
     local settings = {}
     for _, set in ipairs(ENTH.Spawner or {}) do settings[set[1]] = spawnerValue(set) end
 
-    local trains = { first }
-    local LastRot, LastEnt = false, first
-    applySpawner(ENTH, first, false, 1, wagnum, settings)
-    first.FrontAutoCouple, first.RearAutoCouple = false, true
-
-    for i = 2, wagnum do
-        local rot = (i == wagnum) or math.random() > 0.5
-        local cls = (i ~= wagnum) and fam.interim or fam.head
+    local trains, rots, pairsToCouple = {}, {}, {}
+    local xNextFront = xFront           -- front end of the next car to place (path x)
+    for i = 1, wagnum do
+        local rot = i > 1 and ((i == wagnum) or math.random() > 0.5)
+        local cls = (i == 1 or i == wagnum) and fam.head or fam.interim
         local ent = ents.Create(cls)
         if not IsValid(ent) then break end
+        ent.DispatcherSpawned = true
         ent.Owner = owner
+        placeCar(ent, path, xNextFront - s * 9.75, s, rot)   -- rough spot, the model is not loaded yet
         ent:Spawn()
-        -- chain behind the previous car exactly like the spawner tool
-        local couplL1 = LastRot and LastEnt.FrontCouple or LastEnt.RearCouple
-        local couplE1, couplE2, bogeyE1, bogeyE2
-        if rot then
-            bogeyE1, bogeyE2 = ent.RearBogey, ent.FrontBogey
-            couplE1, couplE2 = ent.FrontCouple, ent.RearCouple
-        else
-            bogeyE1, bogeyE2 = ent.FrontBogey, ent.RearBogey
-            couplE1, couplE2 = ent.RearCouple, ent.FrontCouple
-        end
-        if IsValid(couplL1) and IsValid(couplE1) then
-            couplE1:SetPos(couplL1:LocalToWorld(Vector(
-                couplL1.CouplingPointOffset.x * 1.1 + couplE1.CouplingPointOffset.x * 1.1,
-                couplL1.CouplingPointOffset.y - couplE1.CouplingPointOffset.y,
-                couplL1.CouplingPointOffset.z - couplE1.CouplingPointOffset.z)))
-            couplE1:SetAngles(couplL1:LocalToWorldAngles(Angle(0, 180, 0)))
-            couplE2:SetAngles(couplE1:LocalToWorldAngles(Angle(0, 180, 0)))
-            ent:SetPos(couplE1:LocalToWorld(couplE1.SpawnPos * Vector(rot and -1 or 1, -1, -1)))
-            ent:SetAngles(LastEnt:LocalToWorldAngles(Angle(0, rot ~= LastRot and 180 or 0, 0)))
-            bogeyE1:SetPos(ent:LocalToWorld(bogeyE1.SpawnPos))
-            bogeyE2:SetPos(ent:LocalToWorld(bogeyE2.SpawnPos))
-            bogeyE1:SetAngles(ent:LocalToWorldAngles(bogeyE1.SpawnAng))
-            bogeyE2:SetAngles(ent:LocalToWorldAngles(bogeyE1.SpawnAng))
-        end
-        Metrostroi.RerailTrain(ent)
-        LastRot = rot
-        trains[#trains + 1] = ent
-        applySpawner(ENTH, ent, LastRot, i, wagnum, settings)
-        ent.FrontAutoCouple = i < wagnum
-        ent.RearAutoCouple = true
-        LastEnt = ent
-    end
-    if ENTH.Spawner and ENTH.Spawner.postfunc then pcall(ENTH.Spawner.postfunc, trains, wagnum) end
+        ent:Activate()
+        local len = (ent:OBBMaxs().x - ent:OBBMins().x) * U2M
+        if len < 10 then len = 19.5 end
+        local xc = xNextFront - s * len / 2
+        local tdir = placeCar(ent, path, xc, s, rot)
 
-    -- couple them like the spawner: push together by the last car, then hold
-    local coupled, stopped = 0, false
-    local function stop()
-        if stopped then return end
-        stopped = true
-        for _, t in ipairs(trains) do
-            if IsValid(t) then
-                t.FrontBogey.BrakeCylinderPressure, t.RearBogey.BrakeCylinderPressure = 3, 3
-                t.FrontBogey.MotorPower, t.RearBogey.MotorPower = 0, 0
-                t.OnCoupled = nil
+        -- move it so its front coupler meets the previous car's rear coupler
+        local prev = trains[#trains]
+        if prev then
+            local cPrev = rots[#trains] and prev.FrontCouple or prev.RearCouple
+            local cThis = rot and ent.RearCouple or ent.FrontCouple
+            if IsValid(cPrev) and IsValid(cThis) then
+                local gap = (couplePoint(cPrev) - couplePoint(cThis)):Dot(tdir) * U2M   -- > 0: too far back
+                xc = xc + s * (gap - 0.05)
+                placeCar(ent, path, xc, s, rot)
+                pairsToCouple[#pairsToCouple + 1] = { cPrev, cThis }
             end
         end
-        timer.Simple(1, function() for _, t in ipairs(trains) do if IsValid(t) then t.IgnoreEngine = false end end end)
-    end
-    for i, t in ipairs(trains) do
-        t.IgnoreEngine = true
-        t.RearBogey.MotorForce, t.FrontBogey.MotorForce = 40000, 40000
-        t.RearBogey.PneumaticBrakeForce, t.FrontBogey.PneumaticBrakeForce = 50000, 50000
-        t.RearBogey.MotorPower = (i == #trains) and 1 or 0
-        t.FrontBogey.MotorPower = 0
-        local held = (i == 1) and 3 or 0
-        t.FrontBogey.BrakeCylinderPressure, t.RearBogey.BrakeCylinderPressure = held, held
-        t.OnCoupled = function()
-            coupled = coupled + 0.5
-            if coupled >= #trains - 1 then stop() end
+        Metrostroi.RerailTrain(ent)
+
+        -- hold it still while everything settles
+        ent.IgnoreEngine = true
+        for _, b in ipairs({ ent.FrontBogey, ent.RearBogey }) do
+            if IsValid(b) then b.BrakeCylinderPressure = 3; b.MotorPower = 0; b.PneumaticBrakeForce = 50000 end
         end
+
+        local n = #trains + 1
+        trains[n], rots[n] = ent, rot
+        applySpawner(ENTH, ent, rot, i, wagnum, settings)
+        ent.FrontAutoCouple = i > 1 and i < wagnum
+        ent.RearAutoCouple = true
+        xNextFront = xc - s * len / 2
     end
-    -- the fault: only once the spawner's push-together is over (it needs the motors)
-    timer.Simple(4 + #trains, function()
-        for _, t in ipairs(trains) do SP.MakeBroken(t) end
+    if #trains == 0 then return nil, "не удалось создать вагоны" end
+    if ENTH.Spawner and ENTH.Spawner.postfunc then pcall(ENTH.Spawner.postfunc, trains, wagnum) end
+
+    -- couple directly once the rerailer has let go (~1-1.5 s), then release
+    timer.Simple(2, function()
+        for _, p in ipairs(pairsToCouple) do
+            local a, b = p[1], p[2]
+            if IsValid(a) and IsValid(b) and not a.CoupledEnt and not b.CoupledEnt then pcall(a.Couple, a, b) end
+        end
     end)
-    timer.Simple(3 + #trains, stop)
+    timer.Simple(4, function()
+        for _, t in ipairs(trains) do
+            if IsValid(t) then t.IgnoreEngine = false; SP.MakeBroken(t) end
+        end
+    end)
+
+    -- safety: if anything flies off in the first seconds, remove the whole train
+    local watchName = "Dispatcher_SpawnWatch_" .. trains[1]:EntIndex()
+    timer.Create(watchName, 0.5, 16, function()
+        for _, t in ipairs(trains) do
+            for _, e in ipairs({ t, t.FrontBogey, t.RearBogey, t.FrontCouple, t.RearCouple }) do
+                if IsValid(e) and e:GetVelocity():Length() > 1500 then
+                    MsgC(Color(255, 120, 80), "[Dispatcher] Broken train spawn went wrong (physics), removed\n")
+                    removeAll(trains)
+                    if onFail then onFail() end
+                    timer.Remove(watchName)
+                    return
+                end
+            end
+        end
+    end)
     return trains
 end
 
+-- Remove every train spawned by the dispatcher
+function SP.RemoveSpawned()
+    local n = 0
+    for _, e in ipairs(ents.GetAll()) do
+        if e.DispatcherSpawned or e.DispatcherBroken then e:Remove(); n = n + 1 end
+    end
+    return n
+end
 --------------------------------------------------------------------------------
 -- Broken train ahead
 --------------------------------------------------------------------------------
@@ -416,7 +431,7 @@ function SP.SpawnBrokenAhead(consist, opts)
     end
     if not xFront then return nil, "впереди нет подходящего места" .. (why and (" (" .. why .. ")") or "") end
 
-    local trains, err = SP.SpawnTrain(pick, #consist.wagons, path, xFront, st.dirPlus, st.driver)
+    local trains, err = SP.SpawnTrain(pick, #consist.wagons, path, xFront, st.dirPlus, st.driver, opts.onFail)
     if not trains then return nil, err end
     local back, ahead = stationBetween(path, xFront - s * L, s)
     return {
@@ -436,7 +451,9 @@ concommand.Add("dispatcher_spawn_broken", function(ply, _, args)
     local c = Line.GetPlayerConsist(ply)
     if not c then Dispatcher.Chat(ply, "[Dispatcher] Сядь в кабину своего поезда.") return end
     local station = args[1] and (Line.Lower(args[1]) == "станция" or args[1] == "station")
-    local info, err = SP.SpawnBrokenAhead(c, { station = station })
+    local info, err = SP.SpawnBrokenAhead(c, { station = station, onFail = function()
+        if IsValid(ply) then Dispatcher.Chat(ply, "[Dispatcher] Неисправный поезд встал криво (физика), убран. Попробуй ещё раз.") end
+    end })
     if not info then Dispatcher.Chat(ply, "[Dispatcher] Не удалось: " .. err .. ".") return end
     local back, ahead = info.between[1], info.between[2]
     local where
@@ -449,4 +466,10 @@ concommand.Add("dispatcher_spawn_broken", function(ply, _, args)
     end
     Dispatcher.Chat(ply, Format("[Dispatcher] Неисправный поезд %s ×%d поставлен %s, в %.0f м впереди.",
         info.family.name, #info.trains, where, info.distance))
+end)
+
+concommand.Add("dispatcher_remove_broken", function(ply)
+    if IsValid(ply) and not (game.SinglePlayer() or ply:IsSuperAdmin()) then return end
+    local n = SP.RemoveSpawned()
+    Dispatcher.Chat(ply, Format("[Dispatcher] Убрано вагонов неисправных поездов: %d.", n))
 end)
