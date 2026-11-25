@@ -172,8 +172,10 @@ function S.BuildRoute(from, depTime, count, reverseFrom)
 end
 
 -- Shift from the depot and back:
---   depot track `from` -> exit platform -> `count` trips -> entry platform -> depot track `home`.
--- Extra trips are added so that the shift ends at the depot entry station.
+--   depot track `from` -> exit platform -> `count` circles -> entry platform -> depot track `home`.
+-- A circle = both terminals of the line reached once. After the circles the
+-- train rides on to the depot entry station (it may be intermediate) and the
+-- shift ends there.
 function S.BuildDepotRoute(from, exitPl, count, home, entryPl)
     local depotDep = math.ceil((Line.Now() + cvDepotPrep:GetInt()) / 30) * 30
     if not Line.NextPlatform(exitPl) then exitPl = Line.OppositePlatform(exitPl) or exitPl end  -- exit onto a terminal's arrival side
@@ -191,20 +193,48 @@ function S.BuildDepotRoute(from, exitPl, count, home, entryPl)
         trips[#trips + 1] = trip
         pl, t, rev = S.AppendTurnover(trip)
     end
-    while pl and #trips < count do addTrip() end
+    -- `count` = circles: every terminal of the line is reached `count` times
+    local function terminalVisits()
+        local visits = {}
+        for _, trip in ipairs(trips) do
+            for j = #trip.stops, 2, -1 do
+                local p = trip.stops[j].platform
+                if not p.siding and not p.depot then
+                    if not Line.NextPlatform(p) then visits[p.station.id] = (visits[p.station.id] or 0) + 1 end
+                    break
+                end
+            end
+        end
+        local stations, minV = Line.GetStations(), math.huge
+        for _, st in ipairs({ stations[1], stations[#stations] }) do
+            minV = math.min(minV, visits[st.id] or 0)
+        end
+        return minV
+    end
+    local guard = 0
+    while pl and terminalVisits() < count and guard < 40 do addTrip(); guard = guard + 1 end
 
     -- The depot is entered from `entryPl`, which may be an intermediate station
-    -- (Nekrasovka: Лухмановская II): the last trip must pass it, and ends there.
+    -- (Nekrasovka: Лухмановская II): after the circles, ride on until a trip
+    -- passes it, and end that trip there.
     local function entryIndex(trip)
         if not entryPl then return end
         for j = 2, #trip.stops do
             if trip.stops[j].platform == entryPl then return j end
         end
     end
-    local extra = 0
-    while entryPl and pl and not entryIndex(trips[#trips]) and extra < 2 do
-        extra = extra + 1
-        addTrip()
+    -- (no extra trip if the last circle already ends right at the entry, e.g. a terminal)
+    local function endsAtEntry(trip)
+        local j = #trip.stops
+        while j > 1 and trip.stops[j].platform.siding do j = j - 1 end
+        return trip.stops[j].platform == entryPl
+    end
+    if entryPl and pl and not endsAtEntry(trips[#trips]) then
+        local extra = 0
+        repeat
+            addTrip()
+            extra = extra + 1
+        until not pl or entryIndex(trips[#trips]) or extra >= 3
     end
     local last = trips[#trips]
     local j = entryIndex(last)

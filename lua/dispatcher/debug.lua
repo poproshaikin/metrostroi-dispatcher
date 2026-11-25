@@ -136,7 +136,7 @@ concommand.Add("dispatcher_trip", function(ply, _, args)
     if not IsValid(ply) then return end
     local c = Line.GetPlayerConsist(ply)
     local st = Line.GetState(c)
-    local count = math.Clamp(tonumber(args[1]) or 2, 1, 20)
+    local count = math.Clamp(tonumber(args[1]) or 2, 1, 20)   -- trips from a platform, circles from the depot
 
     -- From the depot: depot track -> line -> back to a depot track
     local D = Dispatcher.Depot
@@ -148,15 +148,16 @@ concommand.Add("dispatcher_trip", function(ply, _, args)
                 .. "или задай: !выезд <станция> [путь].") return
         end
         local home = D.FreeTrack(c, ds.track)
+        count = math.Clamp(tonumber(args[1]) or 1, 1, 10)   -- from the depot: circles, default 1
         local trips = S.BuildDepotRoute(ds.track, exitPl, count, home, entryPl)
         if #trips == 0 then Dispatcher.Chat(ply, "[Dispatcher] Не удалось построить маршрут из депо.") return end
         local a = S.Assign(c, trips)
         trips[1].stops[1].factArr = Line.Now()
         local first, lastTrip = trips[1], trips[#trips]
         local endStop = lastTrip.stops[#lastTrip.stops]
-        Dispatcher.Comms.Say(c.id, Format("Наряд: %d рейс(а). Выход из депо с пути %s в %s, ст. %s по %s пути — в %s. "
+        Dispatcher.Comms.Say(c.id, Format("Наряд: %d круг(а), %d рейс(а). Выход из депо с пути %s в %s, ст. %s по %s пути — в %s. "
             .. "Конец смены: постановка на путь %s в %s. График — в консоли.",
-            #trips, ds.track.name, T(first.stops[1].dep), first.stops[2].platform.title,
+            count, #trips, ds.track.name, T(first.stops[1].dep), first.stops[2].platform.title,
             first.stops[2].platform.index == 1 and "I" or "II", T(first.stops[2].arr),
             endStop.platform.name, T(endStop.arr)))
         printTimetable(ply, a)
