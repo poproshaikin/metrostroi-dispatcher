@@ -117,6 +117,11 @@ local function describeTarget(S, r)
         local d = ((pl.xEnd or 0) - S.x) * S.dir
         if not pl.siding and d > 0 and (not bestD or d < bestD) then best, bestD = pl, d end
     end
+    -- a dead end on this same path that comes first (Нижегородская т3 lies on path #1)
+    for _, sd in ipairs(Line.GetSidings()) do
+        local d = sd.path and sd.path == S.path.raw and sd.xEnd and (sd.xEnd - S.x) * S.dir
+        if d and d > 0 and d < 1000 and (not bestD or d < bestD) then return "в " .. sd.name end
+    end
     if best then return "на " .. best.station.name .. " (путь " .. (best.index or "?") .. ")" end
     return "дальше по пути #" .. S.path.id
 end
