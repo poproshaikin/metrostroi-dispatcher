@@ -102,8 +102,11 @@ local function describeTarget(S, r)
         local via = sidingName(P)
         return via and ("депо (через " .. via .. ")") or ("депо (через путь #" .. P.id .. ")")
     end
-    if r.via and not r.target then return "путь #" .. P.id .. " (без светофора)" end
     local sd = sidingName(P)
+    if r.via and not r.target then
+        -- past the dead end's signal, further along its track (Некрасовка: the track goes on ~130 m)
+        return "дальше за " .. (sd or ("путь #" .. P.id)) .. " (без светофора)"
+    end
     if sd then return sd end
     if P.kind == "depotlink" then return "путь #" .. P.id .. " (к депо)" end
     if P.platforms[1] then return P.platforms[1].station.name .. " (путь #" .. P.id .. ")" end
