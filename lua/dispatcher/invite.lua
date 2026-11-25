@@ -72,7 +72,7 @@ end
 -- or no ARS on this series / switched off)
 function I.ArsStop(st)
     local coil = st and IsValid(st.head) and st.head.ALSCoil
-    if not coil or coil.Enabled ~= 1 then return end
+    if not coil or (coil.Enabled or 0) <= 0 then return end   -- 1 or 2 when on (2 on the 717)
     if coil.NoFreq == 1 then return "ОЧ" end
     if coil.F5 == 1 and (coil.F1 or 0) + (coil.F2 or 0) + (coil.F3 or 0) + (coil.F4 or 0) == 0 then return "0" end
 end
