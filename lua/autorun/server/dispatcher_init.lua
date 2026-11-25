@@ -5,6 +5,39 @@ Dispatcher = Dispatcher or {}
 
 AddCSLuaFile("autorun/client/dispatcher_cl.lua")   -- marks drawn on the client
 
+-- Chat line to a player. A chat message is limited to 255 bytes (and a
+-- Cyrillic letter takes 2), longer ones are silently dropped by the engine:
+-- split at spaces into parts of at most MAX bytes.
+local MAX = 190
+-- kind: nil = chat, or HUD_PRINTCONSOLE / HUD_PRINTCENTER; multi-line text is sent line by line
+function Dispatcher.Chat(ply, text, kind)
+    if not IsValid(ply) then print(text) return end
+    text = tostring(text)
+    if text:find("\n", 1, true) then
+        for _, line in ipairs(string.Explode("\n", text)) do Dispatcher.Chat(ply, line, kind) end
+        return
+    end
+    if text == "" then return end
+    local first = true
+    while #text > 0 do
+        local part = text
+        if #part > MAX then
+            local cut = MAX
+            -- back off to a space, else at least to a UTF-8 character start
+            local sp = part:sub(1, MAX):match(".*() ")
+            if sp and sp > MAX / 2 then cut = sp - 1
+            else
+                while cut > 1 and part:byte(cut + 1) and part:byte(cut + 1) >= 128 and part:byte(cut + 1) < 192 do cut = cut - 1 end
+            end
+            part = text:sub(1, cut)
+        end
+        part = first and part or ("  " .. part)
+        if kind then ply:PrintMessage(kind, part) else ply:ChatPrint(part) end
+        text = string.TrimLeft(text:sub(#part + 1))
+        first = false
+    end
+end
+
 local function load()
     if not Metrostroi then
         MsgC(Color(255, 120, 80), "[Dispatcher] Metrostroi not found, disabled\n")

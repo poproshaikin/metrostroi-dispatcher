@@ -19,7 +19,7 @@ end
 
 function Comms.Say(cid, text)
     for _, ply in ipairs(recipients(cid)) do
-        ply:ChatPrint(PREFIX .. text)
+        Dispatcher.Chat(ply, PREFIX .. text)
         ply:SendLua(Format("surface.PlaySound(%q)", BEEP))
     end
 end
@@ -154,7 +154,7 @@ concommand.Add("dispatcher_help", function(ply)
         for _, l in ipairs(HELP_ADMIN) do lines[#lines + 1] = l end
     end
     for _, l in ipairs(lines) do
-        if IsValid(ply) then ply:ChatPrint(l) else print(l) end
+        if IsValid(ply) then Dispatcher.Chat(ply, l) else print(l) end
     end
 end)
 
@@ -204,7 +204,7 @@ hook.Add("PlayerSay", "Dispatcher_ChatCommands", function(ply, text)
     table.remove(args, 1)
     concommand.Run(ply, cmd, args, table.concat(args, " "))
     if not SILENT[cmd] then
-        ply:ChatPrint("[Dispatcher] Ответ в консоли (~).")
+        Dispatcher.Chat(ply, "[Dispatcher] Ответ в консоли (~).")
     end
     return ""
 end)
@@ -218,11 +218,11 @@ hook.Add("PlayerEnteredVehicle", "Dispatcher_Hint", function(ply)
         if not st or st.driver ~= ply or S.GetAssignment(c) then return end
         local ds = Dispatcher.Depot and Dispatcher.Depot.State(c)
         if ds and ds.full then
-            ply:ChatPrint(PREFIX .. Format("Машинист, вы в депо на пути %s. Для наряда напишите !рейс. Все команды: !помощь", ds.track.name))
+            Dispatcher.Chat(ply, PREFIX .. Format("Машинист, вы в депо на пути %s. Для наряда напишите !рейс. Все команды: !помощь", ds.track.name))
         elseif st.at then
-            ply:ChatPrint(PREFIX .. Format("Машинист, вы на ст. %s. Для наряда напишите !рейс (или !рейс 4 — четыре рейса). Все команды: !помощь", st.at.station.name))
+            Dispatcher.Chat(ply, PREFIX .. Format("Машинист, вы на ст. %s. Для наряда напишите !рейс (или !рейс 4 — четыре рейса). Все команды: !помощь", st.at.station.name))
         else
-            ply:ChatPrint(PREFIX .. "Для наряда встаньте на платформу и напишите !рейс.")
+            Dispatcher.Chat(ply, PREFIX .. "Для наряда встаньте на платформу и напишите !рейс.")
         end
     end)
 end)

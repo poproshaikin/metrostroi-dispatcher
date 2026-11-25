@@ -7,7 +7,7 @@
 local Line = Dispatcher.Line
 
 local function out(ply, text)
-    if IsValid(ply) then ply:PrintMessage(HUD_PRINTCONSOLE, text) else print(text) end
+    Dispatcher.Chat(ply, text, HUD_PRINTCONSOLE)
 end
 
 local function allowed(ply)
@@ -75,7 +75,16 @@ timer.Create("Dispatcher_Debug", 0.5, 0, function()
     if not cvDebug:GetBool() then return end
     for _, ply in ipairs(player.GetHumans()) do
         local st = Line.GetPlayerState(ply)
-        if st then ply:PrintMessage(HUD_PRINTCENTER, describe(st)) end
+        if st then
+            -- one center message, max 255 bytes: cut, not mid-character
+            local s = describe(st)
+            if #s > 240 then
+                local cut = 240
+                while cut > 1 and s:byte(cut + 1) and s:byte(cut + 1) >= 128 and s:byte(cut + 1) < 192 do cut = cut - 1 end
+                s = s:sub(1, cut)
+            end
+            ply:PrintMessage(HUD_PRINTCENTER, s)
+        end
     end
 end)
 
@@ -135,12 +144,12 @@ concommand.Add("dispatcher_trip", function(ply, _, args)
     if ds and ds.full then
         local exitPl, entryPl = D.Exit(), D.Entry()
         if not exitPl then
-            ply:ChatPrint("[Dispatcher] Не знаю, куда выезд из депо. Выедь на линию один раз (первая платформа запомнится) "
+            Dispatcher.Chat(ply, "[Dispatcher] Не знаю, куда выезд из депо. Выедь на линию один раз (первая платформа запомнится) "
                 .. "или задай: !выезд <станция> [путь].") return
         end
         local home = D.FreeTrack(c, ds.track)
         local trips = S.BuildDepotRoute(ds.track, exitPl, count, home, entryPl)
-        if #trips == 0 then ply:ChatPrint("[Dispatcher] Не удалось построить маршрут из депо.") return end
+        if #trips == 0 then Dispatcher.Chat(ply, "[Dispatcher] Не удалось построить маршрут из депо.") return end
         local a = S.Assign(c, trips)
         trips[1].stops[1].factArr = Line.Now()
         local first, lastTrip = trips[1], trips[#trips]
@@ -155,7 +164,7 @@ concommand.Add("dispatcher_trip", function(ply, _, args)
     end
 
     if not st or not st.at or not st.stopped then
-        ply:ChatPrint("[Dispatcher] Встань на платформе станции (или целиком на канаве в депо) и остановись.") return
+        Dispatcher.Chat(ply, "[Dispatcher] Встань на платформе станции (или целиком на канаве в депо) и остановись.") return
     end
     local from, prep = st.at, 60
     if not Line.NextPlatform(from) then
@@ -164,7 +173,7 @@ concommand.Add("dispatcher_trip", function(ply, _, args)
     end
     local dep = math.ceil((Line.Now() + prep) / 30) * 30
     local trips = S.BuildRoute(from, dep, count)
-    if #trips == 0 then ply:ChatPrint("[Dispatcher] Не удалось построить рейс отсюда.") return end
+    if #trips == 0 then Dispatcher.Chat(ply, "[Dispatcher] Не удалось построить рейс отсюда.") return end
     local a = S.Assign(c, trips)
     local first = trips[1]
     Dispatcher.Comms.Say(c.id, Format("Маршрут принят: %d рейс(а). Отправление со ст. %s в %s, до ст. %s в %s. График — в консоли.",
@@ -186,7 +195,7 @@ end)
 concommand.Add("dispatcher_trip_cancel", function(ply)
     if not IsValid(ply) then return end
     S.Cancel(Line.GetPlayerConsist(ply))
-    ply:ChatPrint("[Dispatcher] График снят.")
+    Dispatcher.Chat(ply, "[Dispatcher] График снят.")
 end)
 
 concommand.Add("dispatcher_runs", function(ply)
@@ -218,11 +227,11 @@ end)
 --------------------------------------------------------------------------------
 concommand.Add("dispatcher_stopmark", function(ply, _, args)
     if not IsValid(ply) then return end
-    if not allowed(ply) then ply:ChatPrint("[Dispatcher] Калибровать знаки может только суперадмин.") return end
+    if not allowed(ply) then Dispatcher.Chat(ply, "[Dispatcher] Калибровать знаки может только суперадмин.") return end
     local all = args[1] == "all" or args[1] == "все"
     local offset, pl = Line.CalibrateStopMark(Line.GetPlayerConsist(ply), all)
-    if not offset then ply:ChatPrint("[Dispatcher] Не удалось: " .. pl .. ".") return end
-    ply:ChatPrint(Format("[Dispatcher] Знак остановки %s: %+.1f м от конца платформы. %s",
+    if not offset then Dispatcher.Chat(ply, "[Dispatcher] Не удалось: " .. pl .. ".") return end
+    Dispatcher.Chat(ply, Format("[Dispatcher] Знак остановки %s: %+.1f м от конца платформы. %s",
         all and "для всех платформ" or ("ст. " .. pl.station.name .. ", путь " .. pl.index), offset,
         all and "Платформы с собственной калибровкой не тронуты." or "Действует сразу."))
 end)
@@ -230,7 +239,7 @@ end)
 concommand.Add("dispatcher_stopmark_reset", function(ply)
     if IsValid(ply) and not allowed(ply) then return end
     Line.ResetStopMarks()
-    if IsValid(ply) then ply:ChatPrint("[Dispatcher] Калибровка знаков сброшена.") else print("stop marks reset") end
+    if IsValid(ply) then Dispatcher.Chat(ply, "[Dispatcher] Калибровка знаков сброшена.") else print("stop marks reset") end
 end)
 
 --------------------------------------------------------------------------------
@@ -241,11 +250,11 @@ end)
 --------------------------------------------------------------------------------
 concommand.Add("dispatcher_siding_add", function(ply, _, args)
     if not IsValid(ply) then return end
-    if not allowed(ply) then ply:ChatPrint("[Dispatcher] Размечать тупики может только суперадмин.") return end
+    if not allowed(ply) then Dispatcher.Chat(ply, "[Dispatcher] Размечать тупики может только суперадмин.") return end
     local def, err = Line.AddSiding(Line.GetPlayerConsist(ply), table.concat(args, " "))
-    if not def then ply:ChatPrint("[Dispatcher] Не удалось: " .. err .. ".") return end
+    if not def then Dispatcher.Chat(ply, "[Dispatcher] Не удалось: " .. err .. ".") return end
     local st = Line.GetStation(def.station)
-    ply:ChatPrint(Format("[Dispatcher] Тупик «%s» сохранён: после ст. %s (путь %d), выезд на путь %d. Действует для новых нарядов.",
+    Dispatcher.Chat(ply, Format("[Dispatcher] Тупик «%s» сохранён: после ст. %s (путь %d), выезд на путь %d. Действует для новых нарядов.",
         def.name, st and st.name or def.station, def.from, def.from == 1 and 2 or 1))
 end)
 
@@ -258,12 +267,12 @@ concommand.Add("dispatcher_siding_del", function(ply, _, args)
             if Line.RemoveSiding(d.name) then n = n + 1 end
         end
         local msg = Format("[Dispatcher] Удалено тупиков: %d.", n)
-        if IsValid(ply) then ply:ChatPrint(msg) else print(msg) end
+        if IsValid(ply) then Dispatcher.Chat(ply, msg) else print(msg) end
         return
     end
     local ok = Line.RemoveSiding(name)
     local msg = ok and ("[Dispatcher] Тупик «" .. name .. "» удалён.") or ("[Dispatcher] Нет тупика «" .. name .. "» (список: !тупики).")
-    if IsValid(ply) then ply:ChatPrint(msg) else print(msg) end
+    if IsValid(ply) then Dispatcher.Chat(ply, msg) else print(msg) end
 end)
 
 concommand.Add("dispatcher_sidings", function(ply)
@@ -283,7 +292,7 @@ concommand.Add("dispatcher_sidings", function(ply)
     end
     if #lines > 1 and #list == 0 then table.remove(lines, 1) end
     for _, l in ipairs(lines) do
-        if IsValid(ply) then ply:ChatPrint(l) else print(l) end
+        if IsValid(ply) then Dispatcher.Chat(ply, l) else print(l) end
     end
 end)
 
@@ -291,11 +300,11 @@ end)
 -- stand at the platform, dispatcher_platform_turn [name]   (chat: !съезд)
 concommand.Add("dispatcher_platform_turn", function(ply, _, args)
     if not IsValid(ply) then return end
-    if not allowed(ply) then ply:ChatPrint("[Dispatcher] Размечать обороты может только суперадмин.") return end
+    if not allowed(ply) then Dispatcher.Chat(ply, "[Dispatcher] Размечать обороты может только суперадмин.") return end
     local def, pl = Line.AddPlatformTurn(Line.GetPlayerConsist(ply), table.concat(args, " "))
-    if not def then ply:ChatPrint("[Dispatcher] Не удалось: " .. pl .. ".") return end
+    if not def then Dispatcher.Chat(ply, "[Dispatcher] Не удалось: " .. pl .. ".") return end
     local after = Line.NextPlatform(Line.OppositePlatform(pl))
-    ply:ChatPrint(Format("[Dispatcher] «%s» сохранён: прибытие на ст. %s по пути %d, смена кабины на платформе, "
+    Dispatcher.Chat(ply, Format("[Dispatcher] «%s» сохранён: прибытие на ст. %s по пути %d, смена кабины на платформе, "
         .. "назад через съезд%s. Действует для новых нарядов и приказов.", def.name, pl.station.name, pl.index,
         after and (", следующая — " .. after.station.name) or ""))
 end)
@@ -308,7 +317,7 @@ end)
 --------------------------------------------------------------------------------
 local D = Dispatcher.Depot
 
-local function say(ply, text) if IsValid(ply) then ply:ChatPrint(text) else print(text) end end
+local function say(ply, text) if IsValid(ply) then Dispatcher.Chat(ply, text) else print(text) end end
 
 local WHICH = { ["начало"] = "a", ["start"] = "a", ["н"] = "a", ["1"] = "a",
                 ["конец"] = "b", ["end"] = "b", ["к"] = "b", ["2"] = "b" }

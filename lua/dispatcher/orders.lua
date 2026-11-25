@@ -408,13 +408,13 @@ end
 local function orderPrecheck(ply)
     if not IsValid(ply) then return end
     local c = Line.GetPlayerConsist(ply)
-    if not c or not S.GetAssignment(c) then ply:ChatPrint("[Dispatcher] Сначала возьми наряд: !рейс") return end
-    if O.Active[c.id] then ply:ChatPrint("[Dispatcher] Уже есть невыполненный приказ: " .. (O.Active[c.id].text or "")) return end
+    if not c or not S.GetAssignment(c) then Dispatcher.Chat(ply, "[Dispatcher] Сначала возьми наряд: !рейс") return end
+    if O.Active[c.id] then Dispatcher.Chat(ply, "[Dispatcher] Уже есть невыполненный приказ: " .. (O.Active[c.id].text or "")) return end
     return c
 end
 
 local function noStation(ply, cands)
-    ply:ChatPrint("[Dispatcher] Нет подходящей станции впереди" .. (#cands > 0 and (". Можно: " .. names(cands)) or "."))
+    Dispatcher.Chat(ply, "[Dispatcher] Нет подходящей станции впереди" .. (#cands > 0 and (". Можно: " .. names(cands)) or "."))
 end
 
 concommand.Add("dispatcher_order_turnback", function(ply, _, args)
@@ -427,7 +427,7 @@ concommand.Add("dispatcher_order_turnback", function(ply, _, args)
     local stop = findStop(query ~= "" and all or turn, query)
     if not stop then return noStation(ply, turn) end
     if not Line.CanTurnBack(stop.platform) then
-        ply:ChatPrint("[Dispatcher] Внимание: на ст. " .. stop.platform.station.name .. " съезда может не быть.")
+        Dispatcher.Chat(ply, "[Dispatcher] Внимание: на ст. " .. stop.platform.station.name .. " съезда может не быть.")
     end
     O.IssueTurnback(c, stop, "По запросу.")
 end)
@@ -465,10 +465,10 @@ end)
 
 concommand.Add("dispatcher_order_random", function(ply)
     local c = orderPrecheck(ply) if not c then return end
-    if not O.IssueRandom(c) then ply:ChatPrint("[Dispatcher] Сейчас нечего приказать: впереди нет подходящих станций.") end
+    if not O.IssueRandom(c) then Dispatcher.Chat(ply, "[Dispatcher] Сейчас нечего приказать: впереди нет подходящих станций.") end
 end)
 
 concommand.Add("dispatcher_ack", function(ply)
     if not IsValid(ply) then return end
-    if not O.Ack(Line.GetPlayerConsist(ply)) then ply:ChatPrint("[Dispatcher] Нет приказа для подтверждения.") end
+    if not O.Ack(Line.GetPlayerConsist(ply)) then Dispatcher.Chat(ply, "[Dispatcher] Нет приказа для подтверждения.") end
 end)
