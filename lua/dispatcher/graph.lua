@@ -22,6 +22,7 @@
 local Line = Dispatcher.Line
 local G = Dispatcher.Graph or {}
 Dispatcher.Graph = G
+G.VERSION = 3   -- bump when the graph's structure changes (rebuilds a cached one after a reload)
 
 local U2M = 0.01905
 local SWITCH_RADIUS = 50   -- m: a switch this close to a junction belongs to it
@@ -57,7 +58,7 @@ end
 function G.Build()
     local paths = Metrostroi.Paths
     if not paths then return false end
-    local g = { paths = {}, junctions = {}, signals = {}, src = paths }
+    local g = { paths = {}, junctions = {}, signals = {}, src = paths, version = G.VERSION }
 
     for id, path in pairs(paths) do
         if #path < 2 then continue end
@@ -205,7 +206,7 @@ function G.Build()
 end
 
 function G.Get()
-    if not G.g or G.g.src ~= Metrostroi.Paths then
+    if not G.g or G.g.src ~= Metrostroi.Paths or G.g.version ~= G.VERSION then
         if not G.Build() then return end
     end
     return G.g
