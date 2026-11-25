@@ -128,6 +128,38 @@ function G.Build()
         table.sort(P.signals, function(a, b) return a.x < b.x end)
     end
 
+    -- Links from signal routes. The joins above only know where the END of a path
+    -- meets another path; ladders inside a throat (Некрасовка: from path II via
+    -- NS2 to dead end 4, then NS4/NS3 over to dead end 3) are not separate paths
+    -- in the track data. Signal routes do describe them: "from NS14 to NST3 with
+    -- NS2-, NS4+, NS5-". Every route to a named next signal = a way from the
+    -- signal's path to the next signal's path, with the switch positions to set.
+    local byName = {}
+    for _, S in ipairs(g.signals) do if S.name then byName[S.name] = S end end
+    g.links = {}
+    for _, S in ipairs(g.signals) do
+        for _, r in ipairs(S.routes) do
+            local T = r.next and byName[r.next]
+            if T and T ~= S then
+                local L = { from = S, to = T, route = r }
+                r.target = T
+                g.links[#g.links + 1] = L
+                S.path.links = S.path.links or {}
+                table.insert(S.path.links, L)
+            end
+        end
+    end
+
+    -- Which paths can be reached from which (directly: a join or a signal route)
+    for _, P in pairs(g.paths) do P.reach = {} end
+    for _, J in ipairs(g.junctions) do
+        J.host.reach[J.branch.id] = true
+        J.branch.reach[J.host.id] = true
+    end
+    for _, L in ipairs(g.links) do
+        if L.from.path ~= L.to.path then L.from.path.reach[L.to.path.id] = true end
+    end
+
     -- Path ends that stop short of the depot: depot tracks are usually not in the
     -- track data (Nekrasovka), so the line's track just ends there. Such an end is
     -- the way into / out of the depot, and the path can still serve as a turnback
@@ -216,6 +248,17 @@ function G.Describe()
                 (J and jText(J, true) or (P.depotEnds[e] and "→ депо (путей депо нет в схеме)") or "упор / конец схемы")
         end
         for _, J in ipairs(P.junctions) do lines[#lines + 1] = "    " .. jText(J, false) end
+        for _, L in ipairs(P.links or {}) do
+            if L.to.path ~= P then
+                local sws = {}
+                for name, pos in SortedPairs(L.route.switches) do sws[#sws + 1] = name .. (pos == "alt" and "-" or "+") end
+                lines[#lines + 1] = Format("    маршрут со светофора %s (x=%.0f м): на %s (путь #%d, x=%.0f м) [%s]",
+                    L.from.name or "?", L.from.x, L.to.name or "?", L.to.path.id, L.to.x, table.concat(sws, ","))
+            end
+        end
+        local reach = {}
+        for rid in SortedPairs(P.reach) do reach[#reach + 1] = "#" .. rid end
+        if #reach > 0 then lines[#lines + 1] = "    отсюда можно попасть на: " .. table.concat(reach, ", ") end
         for _, sd in ipairs(Line.GetSidings()) do
             if sd.path and sd.path.id == id then
                 lines[#lines + 1] = Format("    оборот: %s, стоп-метка x=%.0f м (после %s, путь %d)", sd.name, sd.xEnd, sd.station.name, sd.from)
