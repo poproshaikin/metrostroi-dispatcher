@@ -7,8 +7,9 @@
 --     opts.station = true       place it at the next platform (stop mark as anchor)
 --
 -- The broken train is as long as the rescuing one (same number of cars), of a
--- series picked from SP.Families: same year as the rescuer's series or newer,
--- newer series more likely. Its spot is straight, free of switches and trains.
+-- series picked from SP.Families: any older series (the older, the rarer) or a
+-- slightly newer similar one. It is spawned "fully started" with a traction
+-- drive failure (SP.MakeBroken). Its spot is straight, free of switches and trains.
 --------------------------------------------------------------------------------
 local Line = Dispatcher.Line
 local SP = Dispatcher.Spawn or {}
@@ -57,21 +58,31 @@ function SP.FamilyOf(consist, head)
     end
 end
 
--- Families a train of family `f` can take: same year or newer, installed
+-- Families a train of family `f` can meet broken on the line: any older series,
+-- and newer ones only if close in time (similar trains, e.g. 81-718 for an 81-717).
+local NEWER_MAX = 20   -- years
+
 function SP.Compatible(f)
     local list = {}
     for _, c in ipairs(SP.Families) do
-        if c.year >= f.year and installed(c.head) and installed(c.interim) then list[#list + 1] = c end
+        if c.year <= f.year + NEWER_MAX and installed(c.head) and installed(c.interim) then list[#list + 1] = c end
     end
     return list
 end
 
--- Weighted pick: the newer the series, the more likely
+-- How likely a series is: the own generation most, older ones rarer and rarer
+-- (halving every 5 years: 81-702 for an 81-717 is very unlikely), a bit newer
+-- ones nearly as likely as the own one.
+local function weight(c, f)
+    if c.year <= f.year then return 10 * 0.5 ^ ((f.year - c.year) / 5) end
+    return 10 * 0.9 ^ ((c.year - f.year) / 5)
+end
+
 function SP.PickFamily(f)
     local list = SP.Compatible(f)
     if #list == 0 then return end
     local total = 0
-    for _, c in ipairs(list) do c._w = (c.year - f.year) + 5; total = total + c._w end
+    for _, c in ipairs(list) do c._w = weight(c, f); total = total + c._w end
     local r = math.random() * total
     for _, c in ipairs(list) do
         r = r - c._w
@@ -168,10 +179,39 @@ local function onPlatform(path, x1, x2)
 end
 
 --------------------------------------------------------------------------------
+-- The fault: traction drive failure. After the car's own think the bogeys get no
+-- motor power: no traction and no electric braking. Everything else (lights,
+-- control, pneumatics — so it brakes from the rescuer's brake line) works.
+--------------------------------------------------------------------------------
+function SP.MakeBroken(ent)
+    if not IsValid(ent) or ent.DispatcherBroken then return end
+    ent.DispatcherBroken = true
+    local orig = ent.Think
+    ent.Think = function(self, ...)
+        local r = orig(self, ...)
+        if self.DispatcherBroken then
+            if IsValid(self.FrontBogey) then self.FrontBogey.MotorPower = 0 end
+            if IsValid(self.RearBogey) then self.RearBogey.MotorPower = 0 end
+        end
+        return r
+    end
+end
+
+-- The fault survives a save / load (Metrostroi Dedicated Save)
+hook.Add("MetrostroiSave_Save", "Dispatcher_Broken", function(ext, cars, index)
+    local list = {}
+    for _, car in ipairs(cars) do if car.DispatcherBroken and index[car] then list[#list + 1] = index[car] end end
+    if #list > 0 then ext.dispatcher_broken = list end
+end)
+hook.Add("MetrostroiSave_Load", "Dispatcher_Broken", function(ext, cars)
+    for _, i in ipairs(ext.dispatcher_broken or {}) do SP.MakeBroken(cars[i]) end
+end)
+
+--------------------------------------------------------------------------------
 -- Spawning (same steps as Metrostroi's train spawner tool)
 --------------------------------------------------------------------------------
 local function spawnerValue(set)
-    if set[1] == "SpawnMode" then return 4 end          -- "Депо": cold, nobody inside
+    if set[1] == "SpawnMode" then return 1 end          -- "Запущен полностью": a train that stopped on the line
     if set[3] == "List" then return 1 end
     if set[3] == "Boolean" then return set[4] == true end
     if set[3] == "Slider" then return set[7] or set[5] or 0 end
@@ -296,8 +336,11 @@ function SP.SpawnTrain(fam, wagnum, path, xFront, dirPlus, owner)
             coupled = coupled + 0.5
             if coupled >= #trains - 1 then stop() end
         end
-        t.DispatcherBroken = true
     end
+    -- the fault: only once the spawner's push-together is over (it needs the motors)
+    timer.Simple(4 + #trains, function()
+        for _, t in ipairs(trains) do SP.MakeBroken(t) end
+    end)
     timer.Simple(3 + #trains, stop)
     return trains
 end
