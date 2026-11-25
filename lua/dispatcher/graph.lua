@@ -25,6 +25,7 @@ Dispatcher.Graph = G
 
 local U2M = 0.01905
 local SWITCH_RADIUS = 50   -- m: a switch this close to a junction belongs to it
+local DEPOT_LINK_RADIUS = 300   -- m: a path end this close to a depot track leads into the depot
 
 local function dirAt(path, i)
     local n = path[i]
@@ -127,11 +128,42 @@ function G.Build()
         table.sort(P.signals, function(a, b) return a.x < b.x end)
     end
 
+    -- Path ends that stop short of the depot: depot tracks are usually not in the
+    -- track data (Nekrasovka), so the line's track just ends there. Such an end is
+    -- the way into / out of the depot, and the path can still serve as a turnback
+    -- dead end (Лухмановская т3/т4).
+    local D = Dispatcher.Depot
+    local depotPts = {}
+    if D then
+        for _, t in ipairs(D.Tracks()) do
+            if t.a then depotPts[#depotPts + 1] = t.a end
+            if t.b then depotPts[#depotPts + 1] = t.b end
+        end
+    end
+    for _, P in pairs(g.paths) do
+        P.depotEnds = {}
+        for _, e in ipairs({ "start", "end" }) do
+            if P.ends[e] or #depotPts == 0 then continue end
+            local pos = (e == "start" and P.raw[1] or P.raw[#P.raw]).pos
+            for _, dp in ipairs(depotPts) do
+                -- same level (maps are multi-storey: Нижегородская's dead end is ~200 m
+                -- from the depot too, but 70 m higher), horizontally close
+                local flat = Vector(pos.x - dp.x, pos.y - dp.y, 0):Length() * U2M
+                if math.abs(pos.z - dp.z) * U2M < 3 and flat < DEPOT_LINK_RADIUS then
+                    P.depotEnds[e] = true
+                    break
+                end
+            end
+        end
+    end
+
     -- Kinds
     for _, P in pairs(g.paths) do
         local s, e = P.ends.start, P.ends["end"]
+        local toDepot = next(P.depotEnds) ~= nil
         if #P.platforms > 0 then P.kind = "main"
         elseif s and e then P.kind = "crossover"
+        elseif (s or e) and toDepot then P.kind = "depotlink"
         elseif s or e then P.kind = "siding"
         else P.kind = "isolated" end
     end
@@ -150,7 +182,7 @@ end
 --------------------------------------------------------------------------------
 -- Describe (debug)
 --------------------------------------------------------------------------------
-local KIND = { main = "главный", crossover = "съезд", siding = "тупик/ветка", isolated = "отдельный" }
+local KIND = { main = "главный", crossover = "съезд", siding = "тупик/ветка", depotlink = "тупик + выход в депо", isolated = "отдельный" }
 
 local function stationsOn(P)
     local names = {}
@@ -180,9 +212,15 @@ function G.Describe()
             #P.platforms > 0 and (" — " .. stationsOn(P)) or "", #P.signals)
         for _, e in ipairs({ "start", "end" }) do
             local J = P.ends[e]
-            lines[#lines + 1] = "    " .. (e == "start" and "начало: " or "конец:  ") .. (J and jText(J, true) or "упор / конец схемы")
+            lines[#lines + 1] = "    " .. (e == "start" and "начало: " or "конец:  ") ..
+                (J and jText(J, true) or (P.depotEnds[e] and "→ депо (путей депо нет в схеме)") or "упор / конец схемы")
         end
         for _, J in ipairs(P.junctions) do lines[#lines + 1] = "    " .. jText(J, false) end
+        for _, sd in ipairs(Line.GetSidings()) do
+            if sd.path and sd.path.id == id then
+                lines[#lines + 1] = Format("    оборот: %s, стоп-метка x=%.0f м (после %s, путь %d)", sd.name, sd.xEnd, sd.station.name, sd.from)
+            end
+        end
     end
     return lines
 end
