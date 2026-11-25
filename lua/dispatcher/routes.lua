@@ -78,8 +78,9 @@ function R.IsSet(S, r)
     return true
 end
 
--- A route with no signal after it ("X"): where it leads is not known from the
--- data (the ladders are not in the track data). Never chosen automatically.
+-- A route with no signal after it ("X"): on Nekrasovka these lead onto stub
+-- continuations past the terminals, where the map just ends (the ladders are not
+-- in the track data either). Never chosen automatically.
 local function noSignal(r) return not r.target and r.next == "X" end
 
 -- What is the route's target path (where the train ends up)
@@ -107,7 +108,7 @@ end
 
 local function describeTarget(S, r)
     if r.target then return placeAt(r.target.path, r.target.x) .. ", светофор " .. (r.target.name or "?") end
-    if noSignal(r) then return "без светофора впереди" end
+    if noSignal(r) then return "без светофора (продолжение пути в никуда, карта обрывается)" end
     -- "*": on along this path, to the next platform in the signal's direction
     local best, bestD
     for _, pl in ipairs(S.path.platforms) do
