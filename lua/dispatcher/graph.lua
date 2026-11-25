@@ -22,7 +22,7 @@
 local Line = Dispatcher.Line
 local G = Dispatcher.Graph or {}
 Dispatcher.Graph = G
-G.VERSION = 5  -- bump when the graph's structure changes (rebuilds a cached one after a reload)
+G.VERSION = 6 -- bump when the graph's structure changes (rebuilds a cached one after a reload)
 
 local U2M = 0.01905
 local SWITCH_RADIUS = 50   -- m: a switch this close to a junction belongs to it
@@ -121,11 +121,14 @@ function G.Build()
         if sig.TrackDir ~= nil then dir = sig.TrackDir and 1 or -1 else dir = tp.forward and 1 or -1 end
         local S = { ent = sig, name = sig.Name, path = P, x = tp.x, dir = dir, routes = {} }
         for k, r in ipairs(sig.Routes or {}) do
-            local sws = {}
+            local sws, order = {}, {}
             for _, s in ipairs(string.Explode(",", r.Switches or "")) do
-                if s ~= "" then sws[s:sub(1, -2)] = (s:sub(-1) == "-") and "alt" or "main" end
+                if s ~= "" then
+                    sws[s:sub(1, -2)] = (s:sub(-1) == "-") and "alt" or "main"
+                    order[#order + 1] = s:sub(1, -2)
+                end
             end
-            S.routes[k] = { index = k, name = r.RouteName, next = r.NextSignal, switches = sws, manual = r.Manual == true }
+            S.routes[k] = { index = k, name = r.RouteName, next = r.NextSignal, switches = sws, order = order, manual = r.Manual == true }
         end
         table.insert(P.signals, S)
         g.signals[#g.signals + 1] = S
@@ -152,6 +155,13 @@ function G.Build()
                 g.links[#g.links + 1] = L
                 S.path.links = S.path.links or {}
                 table.insert(S.path.links, L)
+            elseif r.next == "X" and #r.order > 0 then
+                -- a route with no signal after it (Лухмановская: through т3/т4 straight
+                -- into the depot). It leaves along the path of its last switch.
+                local sw = Metrostroi.GetSwitchByName(r.order[#r.order])
+                local tp = IsValid(sw) and sw.TrackPosition
+                local V = tp and tp.path and g.paths[tp.path.id]
+                if V and V ~= S.path then r.via = V end
             end
         end
     end
@@ -164,6 +174,11 @@ function G.Build()
     end
     for _, L in ipairs(g.links) do
         if L.from.path ~= L.to.path then L.from.path.reach[L.to.path.id] = true end
+    end
+    for _, S in ipairs(g.signals) do
+        for _, r in ipairs(S.routes) do
+            if r.via then S.path.reach[r.via.id] = true end
+        end
     end
 
     -- Path ends that stop short of the depot: depot tracks are usually not in the

@@ -81,14 +81,30 @@ end
 -- What is the route's target path (where the train ends up)
 local function targetPath(S, r)
     if r.target then return r.target.path end
+    if r.via then return r.via end   -- "X": no signal after it, leaves along its last switch's path
     return S.path   -- "*": on to the line, stays on this path
+end
+
+-- A route into the depot past a dead end ("X" route onto a path that ends at the depot)
+local function intoDepot(r)
+    return r.via and not r.target and r.via.kind == "depotlink"
+end
+
+local function sidingName(P)
+    for _, sd in ipairs(Line.GetSidings()) do
+        if sd.path and sd.path.id == P.id then return sd.name end
+    end
 end
 
 local function describeTarget(S, r)
     local P = targetPath(S, r)
-    for _, sd in ipairs(Line.GetSidings()) do
-        if sd.path and sd.path.id == P.id then return sd.name end
+    if intoDepot(r) then
+        local via = sidingName(P)
+        return via and ("депо (через " .. via .. ")") or ("депо (через путь #" .. P.id .. ")")
     end
+    if r.via and not r.target then return "путь #" .. P.id .. " (без светофора)" end
+    local sd = sidingName(P)
+    if sd then return sd end
     if P.kind == "depotlink" then return "путь #" .. P.id .. " (к депо)" end
     if P.platforms[1] then return P.platforms[1].station.name .. " (путь #" .. P.id .. ")" end
     return "путь #" .. P.id
@@ -173,7 +189,11 @@ function R.Choose(S, consist)
     local g = G.Get()
     local want = plannedPath(consist)
     if want then
-        -- 1) straight to the wanted path, 2) to a path that can reach it
+        -- 0) to the depot: straight in past the dead end, 1) straight to the wanted
+        -- path, 2) to a path that can reach it
+        if want == "depot" then
+            for _, r in ipairs(S.routes) do if intoDepot(r) then return r, "plan" end end
+        end
         for _, r in ipairs(S.routes) do
             local P = targetPath(S, r)
             if (want == "depot" and P.kind == "depotlink") or P.id == want then return r, "plan" end
