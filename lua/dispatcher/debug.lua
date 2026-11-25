@@ -252,6 +252,15 @@ end)
 concommand.Add("dispatcher_siding_del", function(ply, _, args)
     if IsValid(ply) and not allowed(ply) then return end
     local name = table.concat(args, " ")
+    if name == "все" or name == "all" then
+        local n = 0
+        for _, d in ipairs(table.Copy(Line.SidingDefs())) do
+            if Line.RemoveSiding(d.name) then n = n + 1 end
+        end
+        local msg = Format("[Dispatcher] Удалено тупиков: %d.", n)
+        if IsValid(ply) then ply:ChatPrint(msg) else print(msg) end
+        return
+    end
     local ok = Line.RemoveSiding(name)
     local msg = ok and ("[Dispatcher] Тупик «" .. name .. "» удалён.") or ("[Dispatcher] Нет тупика «" .. name .. "» (список: !тупики).")
     if IsValid(ply) then ply:ChatPrint(msg) else print(msg) end
