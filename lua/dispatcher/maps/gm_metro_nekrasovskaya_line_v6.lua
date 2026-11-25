@@ -38,6 +38,10 @@ return {
     -- Depot Руднево: tracks are world segments start (a, gate side) -> end (b)
     depotExit = "102/1",   -- out of the depot onto Лухмановская, path I
     depotEntry = "102/2",  -- into the depot from Лухмановская, path II
+    -- signal routes with no next signal ("X") that lead into the depot (it has no
+    -- signalling): from Лухмановская II past dead ends т3/т4. Other X routes on this
+    -- map go onto stub continuations where the map ends.
+    depotRoutes = { LN22G = { 4, 5 } },
     depotTracks = {
         { name = "1", a = { -5271.05, -3902.42, -13039.14 }, b = { -11260.51, -3902.35, -13039.13 } },
         { name = "2", a = { -5281.39, -3435.38, -13039.28 }, b = { -11231.05, -3434.38, -13038.93 } },

@@ -81,7 +81,8 @@ end
 -- A route with no signal after it ("X"): on Nekrasovka these lead onto stub
 -- continuations past the terminals, where the map just ends (the ladders are not
 -- in the track data either). Never chosen automatically.
-local function noSignal(r) return not r.target and r.next == "X" end
+-- Exception: r.depot, routes the map config lists in depotRoutes (into the depot).
+local function noSignal(r) return not r.target and r.next == "X" and not r.depot end
 
 -- What is the route's target path (where the train ends up)
 local function targetPath(S, r)
@@ -108,6 +109,7 @@ end
 
 local function describeTarget(S, r)
     if r.target then return placeAt(r.target.path, r.target.x) .. ", светофор " .. (r.target.name or "?") end
+    if r.depot then return "в депо (без светофора)" end
     if noSignal(r) then return "без светофора (продолжение пути в никуда, карта обрывается)" end
     -- "*": on along this path, to the next platform in the signal's direction
     local best, bestD
@@ -200,9 +202,12 @@ function R.Choose(S, consist)
     if want then
         -- 1) straight to the wanted path, 2) to a path that can reach it
         -- (routes without a signal after them are never picked: unknown where they go)
+        if want == "depot" then
+            for _, r in ipairs(S.routes) do if r.depot then return r, "plan" end end
+        end
         for _, r in ipairs(S.routes) do
             local P = targetPath(S, r)
-            if not noSignal(r) and ((want == "depot" and P.kind == "depotlink") or P.id == want) then return r, "plan" end
+            if not noSignal(r) and not r.depot and ((want == "depot" and P.kind == "depotlink") or P.id == want) then return r, "plan" end
         end
         for _, r in ipairs(S.routes) do
             local P = targetPath(S, r)

@@ -22,7 +22,7 @@
 local Line = Dispatcher.Line
 local G = Dispatcher.Graph or {}
 Dispatcher.Graph = G
-G.VERSION = 6 -- bump when the graph's structure changes (rebuilds a cached one after a reload)
+G.VERSION = 7 -- bump when the graph's structure changes (rebuilds a cached one after a reload)
 
 local U2M = 0.01905
 local SWITCH_RADIUS = 50   -- m: a switch this close to a junction belongs to it
@@ -128,7 +128,9 @@ function G.Build()
                     order[#order + 1] = s:sub(1, -2)
                 end
             end
-            S.routes[k] = { index = k, name = r.RouteName, next = r.NextSignal, switches = sws, order = order, manual = r.Manual == true }
+            local depotList = sig.Name and ((Dispatcher.MapConfig or {}).depotRoutes or {})[sig.Name]
+            S.routes[k] = { index = k, name = r.RouteName, next = r.NextSignal, switches = sws, order = order, manual = r.Manual == true,
+                            depot = depotList ~= nil and table.HasValue(depotList, k) }   -- into the depot (no signalling there)
         end
         table.insert(P.signals, S)
         g.signals[#g.signals + 1] = S
