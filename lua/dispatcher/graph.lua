@@ -222,9 +222,29 @@ function G.Build()
     return true
 end
 
+-- How many signals Metrostroi has placed on the track. Right after map start it
+-- has not done it yet (TrackPosition is set a few seconds later), and a graph
+-- built then has no signals: rebuild when this number changes.
+local function placedSignals()
+    local n = 0
+    for _, sig in ipairs(ents.FindByClass("gmod_track_signal")) do
+        if sig.TrackPosition then n = n + 1 end
+    end
+    return n
+end
+
+local nextCheck = 0
 function G.Get()
-    if not G.g or G.g.src ~= Metrostroi.Paths or G.g.version ~= G.VERSION then
+    local stale = not G.g or G.g.src ~= Metrostroi.Paths or G.g.version ~= G.VERSION
+    if not stale and CurTime() >= nextCheck then
+        nextCheck = CurTime() + 5
+        local first = G.g.signals[1]
+        stale = placedSignals() ~= G.g.placed or (first ~= nil and not IsValid(first.ent))
+    end
+    if stale then
         if not G.Build() then return end
+        G.g.placed = placedSignals()
+        nextCheck = CurTime() + 5
     end
     return G.g
 end
