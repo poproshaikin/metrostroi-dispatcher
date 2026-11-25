@@ -54,6 +54,14 @@ hook.Add("Dispatcher_StopArrive", "Dispatcher_Comms", function(cid, trip, s, dev
     -- next is the turnback dead end: say which track (there may be two)
     local nxt = trip.stops[(trip.cur or 1) + 1]
     if nxt and nxt.platform.siding then msg = msg .. " Оборот через " .. nxt.platform.title .. "." end
+    -- last stop and the next trip leaves from here backwards: turn on the platform
+    local a = S.Assignments[cid]
+    local nt = a and a.trips[a.ti + 1]
+    if not nxt and nt and nt.stops[1].reverse and nt.stops[1].platform == s.platform then
+        local after = nt.stops[2] and nt.stops[2].platform
+        msg = msg .. Format(" Оборот с платформы: высадка, смена кабины, отправление обратно через съезд%s в %s.",
+            after and (" на ст. " .. after.title) or "", Line.FormatTime(nt.stops[1].dep))
+    end
     if s.plannedPlatform then msg = msg .. Format(" (назначен был %s — принято.)", s.plannedPlatform.title) end
     Comms.Say(cid, msg)
 end)
@@ -78,7 +86,10 @@ end)
 hook.Add("Dispatcher_TripDone", "Dispatcher_Comms", function(cid, trip)
     local a = S.Assignments[cid]
     local nxt = a and a.trips[a.ti + 1]
-    if nxt then
+    if nxt and nxt.stops[1].reverse then
+        -- turned on the platform: already told on arrival, now just going
+        Comms.Say(cid, Format("Рейс %d окончен, следуйте по графику.", trip.id))
+    elseif nxt then
         local first = nxt.stops[1]
         Comms.Say(cid, Format("Рейс %d окончен. Оборот, отправление со ст. %s (путь %d) в %s.",
             trip.id, stName(first), first.platform.index, Line.FormatTime(first.dep)))
@@ -118,6 +129,7 @@ local HELP = {
     "  !ограничение [км/ч] [станция] — ограничение скорости на перегоне до станции (по умолчанию 40)",
     "  !отмена — снять наряд",
     "  !тупики — размеченные оборотные тупики; !тупик [название] — разметить (стоя в тупике у знака, админ)",
+    "  !съезд [название] — оборот прямо с этой платформы назад через съезд (стоя у платформы, админ)",
     "  !знак — откалибровать знак остановки этой платформы (встать кабиной точно у знака, админ); !знак все — для всех",
     "Депо:",
     "  !канава <путь> начало / !канава <путь> конец — разметить путь депо (торец кабины у маркера, админ)",
@@ -158,6 +170,7 @@ local CHAT = {
     ["!тупик"] = "dispatcher_siding_add", ["!siding"] = "dispatcher_siding_add",
     ["!тупики"] = "dispatcher_sidings", ["!sidings"] = "dispatcher_sidings",
     ["!тупик_удалить"] = "dispatcher_siding_del",
+    ["!съезд"] = "dispatcher_platform_turn", ["!оборот_платформа"] = "dispatcher_platform_turn",
     ["!знак"] = "dispatcher_stopmark", ["!stopmark"] = "dispatcher_stopmark",
     ["!знак_сброс"] = "dispatcher_stopmark_reset",
     ["!проследовать"] = "dispatcher_order_skip", ["!skip"] = "dispatcher_order_skip",
@@ -172,6 +185,7 @@ local CHAT = {
 local SILENT = { dispatcher_trip = true, dispatcher_trip_cancel = true, dispatcher_ack = true,
     dispatcher_order_turnback = true, dispatcher_help = true,
     dispatcher_siding_add = true, dispatcher_sidings = true, dispatcher_siding_del = true,
+    dispatcher_platform_turn = true,
     dispatcher_stopmark = true, dispatcher_stopmark_reset = true,
     dispatcher_order_skip = true, dispatcher_order_hold = true, dispatcher_order_restrict = true,
     dispatcher_order_random = true,

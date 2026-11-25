@@ -98,8 +98,16 @@ local function build()
     --   siding = true, name, station (parent), from (arrival platform index),
     --   opposite (departure platform after the cab change)
     local sidings = {}
+    for _, pl in ipairs(platforms) do pl.turnHere = nil end
     for _, def in ipairs(Line.SidingDefs()) do
         local st = byId[def.station]
+        -- "Turn on the platform": change cabs at the platform and go back over a
+        -- crossover behind it (no dead end). Just a flag on the platform.
+        if def.kind == "platform" then
+            local pl = st and st.platforms[def.from]
+            if pl then pl.turnHere = def.name end
+            continue
+        end
         local path = Metrostroi.Paths and Metrostroi.Paths[def.path]
         if not st or not path then continue end
         local node
@@ -237,6 +245,15 @@ function Line.SidingFor(platform, exceptConsist)
     return list[Line._sidingTurn % #list + 1]
 end
 
+-- Can a train that arrived at `platform` turn back here (dead end or crossover)?
+function Line.CanTurnBack(platform)
+    if not platform or platform.siding then return false end
+    if platform.turnHere or #Line.SidingsFor(platform) > 0 then return true end
+    local list = Dispatcher.MapConfig and Dispatcher.MapConfig.turnbacks or {}
+    for _, id in ipairs(list) do if id == platform.station.id then return true end end
+    return false
+end
+
 -- Two sidings serving the same turnback (either track will do)
 function Line.SameTurnback(a, b)
     return a == b or (a and b and a.siding and b.siding and a.station == b.station and a.from == b.from)
@@ -260,6 +277,27 @@ function Line.AddSiding(consist, name)
     table.insert(Line._sidingDefs, def)
     saveSidings()
     return def
+end
+
+-- Mark the platform the train stands at as "turn here": cab change on the
+-- platform, back over a crossover onto the other track.
+function Line.AddPlatformTurn(consist, name)
+    local st = Line.GetState(consist)
+    if not st or not st.at or st.at.siding then return nil, "встань у платформы" end
+    if not st.stopped then return nil, "остановись" end
+    local pl = st.at
+    name = (name and name ~= "") and name or ("Оборот с платформы ст. " .. pl.station.name)
+    Line.SidingDefs()
+    for i = #Line._sidingDefs, 1, -1 do
+        local d = Line._sidingDefs[i]
+        if d.name == name or (d.kind == "platform" and d.station == pl.station.id and d.from == pl.index) then
+            table.remove(Line._sidingDefs, i)
+        end
+    end
+    local def = { name = name, kind = "platform", station = pl.station.id, from = pl.index }
+    table.insert(Line._sidingDefs, def)
+    saveSidings()
+    return def, pl
 end
 
 function Line.RemoveSiding(name)

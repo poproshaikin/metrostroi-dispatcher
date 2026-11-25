@@ -143,6 +143,14 @@ function O.IssueTurnback(consist, stop, reason)
 
     local order = newOrder(consist, "turnback", trip, stop, reason)
     order.opposite = opposite
+    if nextTrip and nextTrip.stops[1].reverse then
+        -- turn on the platform over the crossover behind it
+        local after = nextTrip.stops[2] and nextTrip.stops[2].platform
+        return announce(order, Format("Оборот по ст. %s с платформы: высадка пассажиров, смена кабины, "
+            .. "отправление обратно через съезд%s%s.", pl.station.name,
+            after and (" на ст. " .. after.title .. " (" .. trackName(after) .. " путь)") or "",
+            dep and (" в " .. T(dep)) or ""))
+    end
     return announce(order, Format("Оборот по ст. %s: высадка пассажиров, оборот %s, отправление со ст. %s по %s пути%s.",
         pl.station.name, sd and ("через " .. sd.name) or "по съезду",
         opposite.station.name, trackName(opposite), dep and (" в " .. T(dep)) or ""))
@@ -192,7 +200,7 @@ local function options(consist)
     local opts = {}
     local turn = {}
     for _, c in ipairs(O.StopsAhead(consist)) do
-        if O.IsTurnbackStation(c.stop.platform.station) then turn[#turn + 1] = c.stop end
+        if Line.CanTurnBack(c.stop.platform) then turn[#turn + 1] = c.stop end
     end
     if #turn > 0 then
         opts[#opts + 1] = function() return O.IssueTurnback(consist, pick(turn), pick(REASONS.turnback)) end
@@ -280,13 +288,18 @@ local function finish(order, state, text)
     hook.Run(state == "done" and "Dispatcher_OrderDone" or "Dispatcher_OrderViolated", order)
 end
 
--- Turnback: done at the opposite platform; violated beyond the turnback station.
+-- Turnback: done when the next trip starts (opposite platform reached, or
+-- departed backwards after a turn on the platform); violated beyond the station.
+hook.Add("Dispatcher_TripDone", "Dispatcher_Orders", function(cid, trip)
+    local order = O.Active[cid]
+    if order and order.kind == "turnback" and order.trip == trip then
+        finish(order, "done", Format("Оборот по ст. %s выполнен.", order.platform.station.name))
+    end
+end)
+
 hook.Add("Dispatcher_Arrive", "Dispatcher_Orders", function(consist, st, platform)
     local order = O.Active[consist.id]
     if not order or order.kind ~= "turnback" then return end
-    if platform == order.opposite then
-        return finish(order, "done", Format("Оборот по ст. %s выполнен.", order.platform.station.name))
-    end
     local dir = Line.OrderDir(order.platform.index)
     if platform.index == order.platform.index
         and (platform.station.order - order.platform.station.order) * dir > 0 then
@@ -409,11 +422,11 @@ concommand.Add("dispatcher_order_turnback", function(ply, _, args)
     local query = table.concat(args, " ")
     local all = O.StopsAhead(c)
     local turn = {}
-    for _, x in ipairs(all) do if O.IsTurnbackStation(x.stop.platform.station) then turn[#turn + 1] = x end end
+    for _, x in ipairs(all) do if Line.CanTurnBack(x.stop.platform) then turn[#turn + 1] = x end end
     -- by name: any station ahead; without: the nearest station with a crossover
     local stop = findStop(query ~= "" and all or turn, query)
     if not stop then return noStation(ply, turn) end
-    if not O.IsTurnbackStation(stop.platform.station) then
+    if not Line.CanTurnBack(stop.platform) then
         ply:ChatPrint("[Dispatcher] Внимание: на ст. " .. stop.platform.station.name .. " съезда может не быть.")
     end
     O.IssueTurnback(c, stop, "По запросу.")

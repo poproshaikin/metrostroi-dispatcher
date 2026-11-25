@@ -108,8 +108,13 @@ end
 function S.AppendTurnover(trip)
     local last = trip.stops[#trip.stops]
     if last.platform.siding then return Line.OppositePlatform(last.platform), last.dep and (last.dep + 60) end
-    local sd = Line.SidingFor(last.platform)
     local opposite = Line.OppositePlatform(last.platform)
+    -- Turn on the platform: unload, change cabs right here, go back over the
+    -- crossover. The next trip starts from this same platform (third value).
+    if last.platform.turnHere then
+        return opposite, last.arr + cvUnload:GetInt() + cvCab:GetInt(), last.platform
+    end
+    local sd = Line.SidingFor(last.platform)
     if not sd then
         return opposite, last.arr + cvTurn:GetInt()
     end
@@ -139,14 +144,28 @@ function S.BuildTrip(from, depTime, to)
     return trip
 end
 
+-- Next trip after a turnover. `reverseFrom`: the train turned on this platform
+-- and departs from it backwards (it never comes to `from`, the opposite platform).
+local function buildNext(from, depTime, reverseFrom)
+    local trip = S.BuildTrip(from, depTime)
+    if trip and reverseFrom then
+        local s1, s2 = trip.stops[1], trip.stops[2]
+        s1.platform, s1.reverse = reverseFrom, true
+        local r, src = S.RunTime(reverseFrom, s2.platform)
+        if src == "learned" then s2.run = r end
+        S.Recalc(trip)
+    end
+    return trip
+end
+
 -- Shift route: `count` trips back and forth, turning over at the terminals.
-function S.BuildRoute(from, depTime, count)
-    local trips, pl, t = {}, from, depTime
+function S.BuildRoute(from, depTime, count, reverseFrom)
+    local trips, pl, t, rev = {}, from, depTime, reverseFrom
     for i = 1, count do
-        local trip = S.BuildTrip(pl, t)
+        local trip = buildNext(pl, t, rev)
         if not trip then break end
         trips[#trips + 1] = trip
-        pl, t = S.AppendTurnover(trip)
+        pl, t, rev = S.AppendTurnover(trip)
         if not pl then break end
     end
     return trips
@@ -165,7 +184,7 @@ function S.BuildDepotRoute(from, exitPl, count, home, entryPl)
     S.Recalc(first)
 
     local trips = { first }
-    local pl, t = S.AppendTurnover(first)
+    local pl, t, rev = S.AppendTurnover(first)
     local function lastPlatform(trip)
         for j = #trip.stops, 1, -1 do
             if not trip.stops[j].platform.siding then return trip.stops[j].platform end
@@ -174,10 +193,10 @@ function S.BuildDepotRoute(from, exitPl, count, home, entryPl)
     local extra = 0
     while pl and (#trips < count or (entryPl and lastPlatform(trips[#trips]) ~= entryPl and extra < 2)) do
         if #trips >= count then extra = extra + 1 end
-        local trip = S.BuildTrip(pl, t)
+        local trip = buildNext(pl, t, rev)
         if not trip then break end
         trips[#trips + 1] = trip
-        pl, t = S.AppendTurnover(trip)
+        pl, t, rev = S.AppendTurnover(trip)
     end
 
     S.EndAtDepot(trips[#trips], home)
@@ -261,12 +280,12 @@ function S.TurnBack(a, platform, ensureReturn)
     for k = #trip.stops, j + 1, -1 do trip.stops[k] = nil end
     local s = trip.stops[j]
     s.dep, s.skip, s.hold, s.dwell = nil, nil, nil, nil
-    local nextPl, nextDep = S.AppendTurnover(trip)
+    local nextPl, nextDep, nextRev = S.AppendTurnover(trip)
     local left = #a.trips - a.ti
     for k = #a.trips, a.ti + 1, -1 do a.trips[k] = nil end
     if left == 0 and ensureReturn then left = 1 end
     if left > 0 and nextPl then
-        local rest = S.BuildRoute(nextPl, nextDep, left)
+        local rest = S.BuildRoute(nextPl, nextDep, left, nextRev)
         for _, t in ipairs(rest) do a.trips[#a.trips + 1] = t end
     end
     if home then S.EndAtDepot(a.trips[#a.trips], home) end   -- keep the way back to the depot
@@ -394,6 +413,16 @@ hook.Add("Dispatcher_Depart", "Dispatcher_Schedule", function(consist, st, platf
     if not a or a.finished then return end
     local trip = a.trips[a.ti]
     local s = trip.stops[trip.cur]
+    -- Turned on the platform: leaving the last stop backwards = the next trip starts
+    local nextTrip = a.trips[a.ti + 1]
+    if s and s.platform == platform and not s.dep and trip.cur == #trip.stops
+        and nextTrip and nextTrip.stops[1].reverse and nextTrip.stops[1].platform == platform then
+        local arrived = s.factArr
+        trip = advanceTrip(a, consist.id)
+        if not trip then return end
+        s = trip.stops[1]
+        s.factArr = arrived
+    end
     if not s or s.platform ~= platform or not s.dep then return end
     local now = departTime or Line.Now()
     s.factDep = now

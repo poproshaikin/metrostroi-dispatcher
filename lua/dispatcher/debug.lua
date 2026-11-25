@@ -274,9 +274,30 @@ concommand.Add("dispatcher_sidings", function(ply)
         lines[#lines + 1] = Format("[Dispatcher] %s — после %s (путь %d) -> выезд на путь %d",
             sd.name, sd.station.name, sd.from, sd.opposite and sd.opposite.index or 0)
     end
+    for _, d in ipairs(Line.SidingDefs()) do
+        if d.kind == "platform" then
+            local st = Line.GetStation(d.station)
+            lines[#lines + 1] = Format("[Dispatcher] %s — с платформы %s (путь %d), назад через съезд",
+                d.name, st and st.name or d.station, d.from)
+        end
+    end
+    if #lines > 1 and #list == 0 then table.remove(lines, 1) end
     for _, l in ipairs(lines) do
         if IsValid(ply) then ply:ChatPrint(l) else print(l) end
     end
+end)
+
+-- Turn on the platform over a crossover behind it (no dead end):
+-- stand at the platform, dispatcher_platform_turn [name]   (chat: !съезд)
+concommand.Add("dispatcher_platform_turn", function(ply, _, args)
+    if not IsValid(ply) then return end
+    if not allowed(ply) then ply:ChatPrint("[Dispatcher] Размечать обороты может только суперадмин.") return end
+    local def, pl = Line.AddPlatformTurn(Line.GetPlayerConsist(ply), table.concat(args, " "))
+    if not def then ply:ChatPrint("[Dispatcher] Не удалось: " .. pl .. ".") return end
+    local after = Line.NextPlatform(Line.OppositePlatform(pl))
+    ply:ChatPrint(Format("[Dispatcher] «%s» сохранён: прибытие на ст. %s по пути %d, смена кабины на платформе, "
+        .. "назад через съезд%s. Действует для новых нарядов и приказов.", def.name, pl.station.name, pl.index,
+        after and (", следующая — " .. after.station.name) or ""))
 end)
 
 --------------------------------------------------------------------------------
