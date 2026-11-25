@@ -117,7 +117,7 @@ local HELP = {
 local HELP_ADMIN = {
     "Настройки (консоль сервера): dispatcher_dwell (стоянка, 30), dispatcher_turnover (оборот без тупика, 240),",
     "  dispatcher_unload (высадка перед тупиком, 60), dispatcher_cabchange (смена кабины в тупике, 120),",
-    "  dispatcher_tolerance (допуск, 15), dispatcher_orders_chance (случайные приказы, 0.03/мин),",
+    "  dispatcher_tolerance (допуск, 15), dispatcher_orders_chance (случайные приказы, 0.08/мин), dispatcher_orders_per_trip (2),",
     "  dispatcher_learn (учиться на поездках, 1). Отладка: dispatcher_stations, dispatcher_runs, dispatcher_debug 1",
 }
 

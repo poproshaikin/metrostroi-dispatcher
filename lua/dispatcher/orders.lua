@@ -20,8 +20,10 @@ local Line, S = Dispatcher.Line, Dispatcher.Schedule
 local O = Dispatcher.Orders or {}
 Dispatcher.Orders = O
 
-local cvChance = CreateConVar("dispatcher_orders_chance", "0.03", FCVAR_ARCHIVE,
+local cvChance = CreateConVar("dispatcher_orders_chance", "0.08", FCVAR_ARCHIVE,
     "Chance per minute that the dispatcher issues a random order to a train with a timetable (0 = off)")
+local cvMax = CreateConVar("dispatcher_orders_per_trip", "2", FCVAR_ARCHIVE,
+    "Maximum random orders per trip")
 
 local ACK_TIMEOUT   = 60    -- s, then the order is repeated once
 local MIN_LEAD_DIST = 600   -- m, an order for the very next station needs at least this much warning
@@ -231,10 +233,12 @@ timer.Create("Dispatcher_RandomOrders", 15, 0, function()
     for cid, a in pairs(S.Assignments) do
         if a.finished or O.Active[cid] then continue end
         local trip = a.trips[a.ti]
-        if trip.orderGiven or not trip.stops[trip.cur or 1].factDep then continue end  -- one per trip, only while running
+        -- limited per trip, only while running, not right after the previous one
+        if (trip.ordersGiven or 0) >= cvMax:GetInt() or not trip.stops[trip.cur or 1].factDep then continue end
+        if trip.lastOrderDone and Line.Now() - trip.lastOrderDone < 90 then continue end
         if math.random() < p then
             local c = Line.GetConsist(cid)
-            if c and O.IssueRandom(c) then trip.orderGiven = true end
+            if c and O.IssueRandom(c) then trip.ordersGiven = (trip.ordersGiven or 0) + 1 end
         end
     end
 end)
@@ -264,6 +268,7 @@ local function finish(order, state, text)
     order.state = state
     order.finished = Line.Now()
     O.Active[order.cid] = nil
+    if order.trip then order.trip.lastOrderDone = order.finished end
     if text then
         if state == "done" and not order.acked then text = text .. " (приказ не был подтверждён)" end
         say(order.cid, text)
