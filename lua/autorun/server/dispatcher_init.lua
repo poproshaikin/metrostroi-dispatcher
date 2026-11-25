@@ -3,6 +3,8 @@
 --------------------------------------------------------------------------------
 Dispatcher = Dispatcher or {}
 
+AddCSLuaFile("autorun/client/dispatcher_cl.lua")   -- marks drawn on the client
+
 local function load()
     if not Metrostroi then
         MsgC(Color(255, 120, 80), "[Dispatcher] Metrostroi not found, disabled\n")
@@ -17,6 +19,7 @@ local function load()
     include("dispatcher/schedule.lua")
     include("dispatcher/comms.lua")
     include("dispatcher/orders.lua")
+    include("dispatcher/depot.lua")
     include("dispatcher/debug.lua")
 
     MsgC(Color(120, 200, 255), "[Dispatcher] loaded, map config: ",

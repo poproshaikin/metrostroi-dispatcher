@@ -67,6 +67,10 @@ hook.Add("Dispatcher_StopMissed", "Dispatcher_Comms", function(cid, trip, s)
     Comms.Say(cid, Format("Проследовали ст. %s без остановки! Нарушение.", stName(s)))
 end)
 
+hook.Add("Dispatcher_WrongDepotTrack", "Dispatcher_Comms", function(cid, trip, planned, actual)
+    Comms.Say(cid, Format("Вы на пути %s, а постановка назначена на путь %s! Переставьте состав.", actual.name, planned.platform.name))
+end)
+
 hook.Add("Dispatcher_TripDone", "Dispatcher_Comms", function(cid, trip)
     local a = S.Assignments[cid]
     local nxt = a and a.trips[a.ti + 1]
@@ -111,8 +115,15 @@ local HELP = {
     "  !отмена — снять наряд",
     "  !тупики — размеченные оборотные тупики; !тупик [название] — разметить (стоя в тупике у знака, админ)",
     "  !знак — откалибровать знак остановки этой платформы (встать кабиной точно у знака, админ); !знак все — для всех",
+    "Депо:",
+    "  !канава <путь> начало / !канава <путь> конец — разметить путь депо (торец кабины у маркера, админ)",
+    "  !канавы — пути депо, куда выезд и откуда заезд; !канава_удалить <путь>",
+    "  !выезд <станция> [путь], !заезд <станция> [путь] — задать вручную (обычно запоминается само)",
+    "  !рейс, стоя целиком на канаве, — наряд из депо: выход на линию, рейсы, постановка обратно в депо",
+    "  !метки — показать/скрыть метки в мире (канавы, тупики, знаки остановки)",
+    "  !экспорт — сохранить всю разметку карты в файл (для другого сервера или аддона, админ)",
     "  !помощь — эта справка",
-    "Наряд берётся, стоя у платформы на месте машиниста. Время — по станционным часам.",
+    "Наряд берётся, стоя у платформы (или на канаве) на месте машиниста. Время — по станционным часам.",
 }
 local HELP_ADMIN = {
     "Настройки (консоль сервера): dispatcher_dwell (стоянка, 30), dispatcher_turnover (оборот без тупика, 240),",
@@ -149,16 +160,27 @@ local CHAT = {
     ["!задержка"] = "dispatcher_order_hold", ["!hold"] = "dispatcher_order_hold",
     ["!ограничение"] = "dispatcher_order_restrict", ["!limit"] = "dispatcher_order_restrict",
     ["!приказ"] = "dispatcher_order_random", ["!order"] = "dispatcher_order_random",
+    ["!канава"] = "dispatcher_depot_mark", ["!канавы"] = "dispatcher_depot_list", ["!депо"] = "dispatcher_depot_list",
+    ["!канава_удалить"] = "dispatcher_depot_del",
+    ["!выезд"] = "dispatcher_depot_exit", ["!заезд"] = "dispatcher_depot_entry",
+    ["!экспорт"] = "dispatcher_export", ["!export"] = "dispatcher_export",
 }
 local SILENT = { dispatcher_trip = true, dispatcher_trip_cancel = true, dispatcher_ack = true,
     dispatcher_order_turnback = true, dispatcher_help = true,
     dispatcher_siding_add = true, dispatcher_sidings = true, dispatcher_siding_del = true,
     dispatcher_stopmark = true, dispatcher_stopmark_reset = true,
     dispatcher_order_skip = true, dispatcher_order_hold = true, dispatcher_order_restrict = true,
-    dispatcher_order_random = true }
+    dispatcher_order_random = true,
+    dispatcher_depot_mark = true, dispatcher_depot_list = true, dispatcher_depot_del = true,
+    dispatcher_depot_exit = true, dispatcher_depot_entry = true, dispatcher_export = true }
 hook.Add("PlayerSay", "Dispatcher_ChatCommands", function(ply, text)
     local args = string.Explode(" ", string.Trim(text))
-    local cmd = CHAT[string.lower(args[1] or "")]
+    local first = Line.Lower(args[1] or "")
+    if first == "!метки" or first == "!marks" then
+        ply:ConCommand("dispatcher_marks_toggle")   -- client-side toggle
+        return ""
+    end
+    local cmd = CHAT[first]
     if not cmd then return end
     table.remove(args, 1)
     concommand.Run(ply, cmd, args, table.concat(args, " "))
@@ -175,7 +197,10 @@ hook.Add("PlayerEnteredVehicle", "Dispatcher_Hint", function(ply)
         local c = Line.GetPlayerConsist(ply)
         local st = c and Line.GetState(c)
         if not st or st.driver ~= ply or S.GetAssignment(c) then return end
-        if st.at then
+        local ds = Dispatcher.Depot and Dispatcher.Depot.State(c)
+        if ds and ds.full then
+            ply:ChatPrint(PREFIX .. Format("Машинист, вы в депо на пути %s. Для наряда напишите !рейс. Все команды: !помощь", ds.track.name))
+        elseif st.at then
             ply:ChatPrint(PREFIX .. Format("Машинист, вы на ст. %s. Для наряда напишите !рейс (или !рейс 4 — четыре рейса). Все команды: !помощь", st.at.station.name))
         else
             ply:ChatPrint(PREFIX .. "Для наряда встаньте на платформу и напишите !рейс.")

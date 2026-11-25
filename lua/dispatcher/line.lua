@@ -185,9 +185,13 @@ function Line.SidingDefs()
     if not Line._sidingDefs then
         Line._sidingDefs = util.JSONToTable(file.Read(SIDINGS_FILE, "DATA") or "") or {}
     end
-    local list = {}
-    for _, d in ipairs((Dispatcher.MapConfig or {}).sidings or {}) do list[#list + 1] = d end
-    for _, d in ipairs(Line._sidingDefs) do list[#list + 1] = d end
+    -- map config first; a saved siding with the same name replaces it
+    local list, byName = {}, {}
+    local function add(d)
+        if byName[d.name] then list[byName[d.name]] = d else list[#list + 1] = d; byName[d.name] = #list end
+    end
+    for _, d in ipairs((Dispatcher.MapConfig or {}).sidings or {}) do add(d) end
+    for _, d in ipairs(Line._sidingDefs) do add(d) end
     return list
 end
 
@@ -264,6 +268,25 @@ function Line.NextPlatform(platform)
     if not build() or not platform then return end
     local st = cache.stations[platform.station.order + Line.OrderDir(platform.index)]
     return st and st.platforms[platform.index]
+end
+
+-- Lowercase for Cyrillic too (string.lower only handles ASCII)
+function Line.Lower(s)
+    s = string.lower(s)
+    return (s:gsub("\208([\144-\175])", function(c)          -- А..Я
+        local b = c:byte() + 32
+        if b < 176 then return "\208" .. string.char(b) end   -- А..П -> а..п
+        return "\209" .. string.char(b - 64)                  -- Р..Я -> р..я
+    end):gsub("\208\129", "\209\145"))                        -- Ё -> ё
+end
+
+-- Station by id or name prefix ("окс", "108")
+function Line.FindStation(query)
+    if not query or query == "" then return end
+    local q = Line.Lower(query)
+    for _, st in ipairs(Line.GetStations()) do
+        if tostring(st.id) == q or string.find(Line.Lower(st.name), q, 1, true) == 1 then return st end
+    end
 end
 
 -- Line time in seconds: the same clock the station clocks show (UTC-based, as

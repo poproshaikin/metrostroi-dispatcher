@@ -27,6 +27,10 @@ local cvTol   = CreateConVar("dispatcher_tolerance", "15", FCVAR_ARCHIVE, "Devia
 local cvUnload = CreateConVar("dispatcher_unload", "60", FCVAR_ARCHIVE,
     "Dwell at the arrival platform before going into a turnback siding (passengers leave), s")
 local cvCab   = CreateConVar("dispatcher_cabchange", "120", FCVAR_ARCHIVE, "Planned cab change time in a siding, s")
+local cvDepotRun  = CreateConVar("dispatcher_depot_run", "300", FCVAR_ARCHIVE,
+    "Planned run between a depot track and the line (until learned), s")
+local cvDepotPrep = CreateConVar("dispatcher_depot_prep", "600", FCVAR_ARCHIVE,
+    "Time to prepare the train before leaving the depot, s")
 
 local FALLBACK_SPEED = 45   -- km/h average, when Metrostroi can't estimate a run
 local MIN_DWELL      = 15   -- s, shorter dwell is reported as a violation
@@ -51,6 +55,7 @@ function S.RunTime(a, b)
         local d = Line.Distance(a, b)
         if d then norm, src = d / (FALLBACK_SPEED / 3.6) + 25, "distance" end
     end
+    if not norm and (a.depot or b.depot) then norm, src = cvDepotRun:GetInt(), "depot" end
     if not norm then norm, src = 120, "default" end
     local l = cvLearn:GetBool() and learned[runKey(a, b)]
     if l then return math.Round(l), "learned", math.Round(norm) end
@@ -59,7 +64,10 @@ end
 
 local function learn(a, b, actual)
     local _, _, norm = S.RunTime(a, b)
-    if actual < norm * 0.5 or actual > norm * 2 then return end   -- held / stuck, not a real run
+    -- held / stuck, not a real run (depot runs vary a lot: wider window)
+    local lo, hi = 0.5, 2
+    if a.depot or b.depot then lo, hi = 0.3, 4 end
+    if actual < norm * lo or actual > norm * hi then return end
     local k = runKey(a, b)
     learned[k] = learned[k] and (learned[k] * 0.7 + actual * 0.3) or actual
     file.CreateDir("dispatcher")
@@ -142,6 +150,56 @@ function S.BuildRoute(from, depTime, count)
     return trips
 end
 
+-- Shift from the depot and back:
+--   depot track `from` -> exit platform -> `count` trips -> entry platform -> depot track `home`.
+-- Extra trips are added so that the shift ends at the depot entry station.
+function S.BuildDepotRoute(from, exitPl, count, home, entryPl)
+    local depotDep = math.ceil((Line.Now() + cvDepotPrep:GetInt()) / 30) * 30
+    if not Line.NextPlatform(exitPl) then exitPl = Line.OppositePlatform(exitPl) or exitPl end  -- exit onto a terminal's arrival side
+    local first = S.BuildTrip(exitPl, 0)
+    if not first then return {} end
+    table.insert(first.stops, 1, { platform = from, dep = depotDep, run = 0 })
+    first.stops[2].run = S.RunTime(from, exitPl)
+    S.Recalc(first)
+
+    local trips = { first }
+    local pl, t = S.AppendTurnover(first)
+    local function lastPlatform(trip)
+        for j = #trip.stops, 1, -1 do
+            if not trip.stops[j].platform.siding then return trip.stops[j].platform end
+        end
+    end
+    local extra = 0
+    while pl and (#trips < count or (entryPl and lastPlatform(trips[#trips]) ~= entryPl and extra < 2)) do
+        if #trips >= count then extra = extra + 1 end
+        local trip = S.BuildTrip(pl, t)
+        if not trip then break end
+        trips[#trips + 1] = trip
+        pl, t = S.AppendTurnover(trip)
+    end
+
+    S.EndAtDepot(trips[#trips], home)
+    return trips
+end
+
+-- Make `trip` end on depot track `home` instead of a turnover.
+function S.EndAtDepot(trip, home)
+    while #trip.stops > 2 and (trip.stops[#trip.stops].platform.siding or trip.stops[#trip.stops].platform.depot) do
+        table.remove(trip.stops)
+    end
+    local lastStop = trip.stops[#trip.stops]
+    lastStop.dwell = cvUnload:GetInt()
+    trip.stops[#trip.stops + 1] = { platform = home, run = S.RunTime(lastStop.platform, home), depotEnd = true }
+    S.Recalc(trip)
+end
+
+-- Depot track the shift ends on, if it does
+local function depotHome(a)
+    local last = a.trips[#a.trips]
+    local s = last and last.stops[#last.stops]
+    return s and s.depotEnd and s.platform
+end
+
 --------------------------------------------------------------------------------
 -- Changing the plan (for orders.lua)
 --------------------------------------------------------------------------------
@@ -197,6 +255,7 @@ function S.TurnBack(a, platform, ensureReturn)
     local trip = a.trips[a.ti]
     local _, j = findStop(trip, platform)
     if not j or j < 2 then return false end
+    local home = depotHome(a)
     for k = #trip.stops, j + 1, -1 do trip.stops[k] = nil end
     local s = trip.stops[j]
     s.dep, s.skip, s.hold, s.dwell = nil, nil, nil, nil
@@ -208,6 +267,7 @@ function S.TurnBack(a, platform, ensureReturn)
         local rest = S.BuildRoute(nextPl, nextDep, left)
         for _, t in ipairs(rest) do a.trips[#a.trips + 1] = t end
     end
+    if home then S.EndAtDepot(a.trips[#a.trips], home) end   -- keep the way back to the depot
     return true
 end
 
@@ -315,6 +375,13 @@ hook.Add("Dispatcher_Arrive", "Dispatcher_Schedule", function(consist, st, platf
             if j == #trip.stops and not a.trips[a.ti + 1] then advanceTrip(a, consist.id) end
             return
         end
+    end
+
+    -- Stood on the wrong depot track at the end of the shift
+    local last = trip.stops[#trip.stops]
+    if platform.depot and last.depotEnd and last.platform ~= platform and trip.cur >= #trip.stops - 1 then
+        last.wrongTrack = platform
+        hook.Run("Dispatcher_WrongDepotTrack", consist.id, trip, last, platform)
     end
 end)
 

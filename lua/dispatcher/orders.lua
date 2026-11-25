@@ -57,8 +57,11 @@ end
 --------------------------------------------------------------------------------
 -- Where an order can apply
 --------------------------------------------------------------------------------
+-- Last stop of the trip that is a line station (not a siding / depot track)
 local function lastRealIndex(trip)
-    return #trip.stops - (trip.stops[#trip.stops].platform.siding and 1 or 0)
+    local j = #trip.stops
+    while j > 1 and (trip.stops[j].platform.siding or trip.stops[j].platform.depot) do j = j - 1 end
+    return j
 end
 
 -- Stops of the current trip ahead of the train that the driver can still react to.
@@ -73,7 +76,7 @@ function O.StopsAhead(consist, opts)
     local running = trip.stops[cur].factDep ~= nil
     local st = Line.GetState(consist)
     local list = {}
-    if opts.current and not running and trip.stops[cur].dep then
+    if opts.current and not running and trip.stops[cur].dep and not trip.stops[cur].platform.depot then
         list[#list + 1] = { stop = trip.stops[cur], j = cur }
     end
     local last = lastRealIndex(trip) - (opts.last and 0 or 1)
