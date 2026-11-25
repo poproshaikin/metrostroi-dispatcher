@@ -185,21 +185,33 @@ function S.BuildDepotRoute(from, exitPl, count, home, entryPl)
 
     local trips = { first }
     local pl, t, rev = S.AppendTurnover(first)
-    local function lastPlatform(trip)
-        for j = #trip.stops, 1, -1 do
-            if not trip.stops[j].platform.siding then return trip.stops[j].platform end
-        end
-    end
-    local extra = 0
-    while pl and (#trips < count or (entryPl and lastPlatform(trips[#trips]) ~= entryPl and extra < 2)) do
-        if #trips >= count then extra = extra + 1 end
+    local function addTrip()
         local trip = buildNext(pl, t, rev)
-        if not trip then break end
+        if not trip then pl = nil return end
         trips[#trips + 1] = trip
         pl, t, rev = S.AppendTurnover(trip)
     end
+    while pl and #trips < count do addTrip() end
 
-    S.EndAtDepot(trips[#trips], home)
+    -- The depot is entered from `entryPl`, which may be an intermediate station
+    -- (Nekrasovka: Лухмановская II): the last trip must pass it, and ends there.
+    local function entryIndex(trip)
+        if not entryPl then return end
+        for j = 2, #trip.stops do
+            if trip.stops[j].platform == entryPl then return j end
+        end
+    end
+    local extra = 0
+    while entryPl and pl and not entryIndex(trips[#trips]) and extra < 2 do
+        extra = extra + 1
+        addTrip()
+    end
+    local last = trips[#trips]
+    local j = entryIndex(last)
+    if j then
+        for k = #last.stops, j + 1, -1 do last.stops[k] = nil end
+    end
+    S.EndAtDepot(last, home)
     return trips
 end
 
