@@ -40,6 +40,16 @@ hook.Add("InitPostEntity", "dispatcher_marks", function()
     if cvMarks:GetBool() then timer.Simple(5, request) end
 end)
 
+-- Clock check (!часы): the server asks, we answer with what the station clocks show here
+net.Receive("dispatcher_clock", function()
+    local sync = Metrostroi and Metrostroi.GetSyncTime and Metrostroi.GetSyncTime() or -1
+    net.Start("dispatcher_clock")
+    net.WriteDouble(sync)
+    net.WriteDouble(os.time())
+    net.WriteDouble(CurTime())
+    net.SendToServer()
+end)
+
 hook.Add("PostDrawTranslucentRenderables", "dispatcher_marks", function(depth, sky)
     if sky or not cvMarks:GetBool() or #marks == 0 then return end
     local eye = EyePos()

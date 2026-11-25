@@ -193,6 +193,24 @@ concommand.Add("dispatcher_schedule", function(ply)
     printTimetable(ply, a)
 end)
 
+-- Clock check: server line time vs the station clocks on the client
+util.AddNetworkString("dispatcher_clock")
+concommand.Add("dispatcher_clock", function(ply)
+    if not IsValid(ply) then print("line time " .. T(Line.Now()) .. "  os.time " .. os.date("!%H:%M:%S")) return end
+    ply.DispatcherClockAsk = { now = Line.Now(), os = os.time(), ct = CurTime() }
+    net.Start("dispatcher_clock") net.Send(ply)
+end)
+net.Receive("dispatcher_clock", function(_, ply)
+    local ask = ply.DispatcherClockAsk
+    if not ask then return end
+    local sync, cos, cct = net.ReadDouble(), net.ReadDouble(), net.ReadDouble()
+    Dispatcher.Chat(ply, Format("[Dispatcher] Часы: диспетчер %s | станционные часы у тебя %s (разница %+.1f с) | "
+        .. "системное время сервер %s, у тебя %s | CurTime сервер %.1f, у тебя %.1f",
+        T(ask.now), sync >= 0 and T(sync) or "?", sync >= 0 and (sync - ask.now) or 0,
+        os.date("!%H:%M:%S", ask.os), os.date("!%H:%M:%S", cos), ask.ct, cct))
+    ply.DispatcherClockAsk = nil
+end)
+
 -- "Train ready": depart earlier than planned (from the depot, the first station, after a turnover)
 concommand.Add("dispatcher_ready", function(ply)
     if not IsValid(ply) then return end

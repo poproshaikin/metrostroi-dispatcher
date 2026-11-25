@@ -167,6 +167,7 @@ local CHAT = {
     ["!где"] = "dispatcher_where", ["!where"] = "dispatcher_where",
     ["!понял"] = "dispatcher_ack", ["!ack"] = "dispatcher_ack",
     ["!готов"] = "dispatcher_ready", ["!ready"] = "dispatcher_ready",
+    ["!часы"] = "dispatcher_clock", ["!clock"] = "dispatcher_clock",
     ["!оборот"] = "dispatcher_order_turnback", ["!turnback"] = "dispatcher_order_turnback",
     ["!помощь"] = "dispatcher_help", ["!help"] = "dispatcher_help", ["!дцх"] = "dispatcher_help",
     ["!тупик"] = "dispatcher_siding_add", ["!siding"] = "dispatcher_siding_add",
@@ -190,7 +191,7 @@ local SILENT = { dispatcher_trip = true, dispatcher_trip_cancel = true, dispatch
     dispatcher_siding_add = true, dispatcher_sidings = true, dispatcher_siding_del = true,
     dispatcher_platform_turn = true,
     dispatcher_stopmark = true, dispatcher_stopmark_reset = true,
-    dispatcher_ready = true, dispatcher_order_skip = true, dispatcher_order_hold = true, dispatcher_order_restrict = true,
+    dispatcher_ready = true, dispatcher_clock = true, dispatcher_order_skip = true, dispatcher_order_hold = true, dispatcher_order_restrict = true,
     dispatcher_order_random = true,
     dispatcher_depot_mark = true, dispatcher_depot_list = true, dispatcher_depot_del = true,
     dispatcher_depot_exit = true, dispatcher_depot_entry = true, dispatcher_export = true }
