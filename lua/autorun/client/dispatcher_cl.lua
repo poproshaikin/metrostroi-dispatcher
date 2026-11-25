@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
 -- Metrostroi Dispatcher — client: visible marks (!метки / dispatcher_marks 1)
 --   green  = depot track start, red = depot track end,
---   orange = turnback siding, blue = platform stop marks
+--   orange = turnback siding, blue = platform stop marks, purple = switches
 --------------------------------------------------------------------------------
 local cvMarks = CreateClientConVar("dispatcher_marks", "0", true, false, "Show dispatcher marks in the world")
 
@@ -11,6 +11,7 @@ local COLORS = {
     [2] = Color(230, 60, 60),
     [3] = Color(255, 160, 40),
     [4] = Color(80, 150, 255),
+    [5] = Color(190, 90, 255),   -- switches / track junctions
 }
 local MAX_DIST = 4000   -- units: draw only nearby marks
 

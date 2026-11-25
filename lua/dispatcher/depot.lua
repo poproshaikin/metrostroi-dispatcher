@@ -269,6 +269,9 @@ function D.SendMarks(ply)
             if pos then marks[#marks + 1] = { pos, "Знак: " .. st.name .. " (путь " .. pl.index .. ")", 4 } end
         end
     end
+    if Dispatcher.Graph then
+        for _, m in ipairs(Dispatcher.Graph.Marks()) do marks[#marks + 1] = m end
+    end
     net.Start("dispatcher_marks")
     net.WriteUInt(#marks, 12)
     for _, m in ipairs(marks) do
