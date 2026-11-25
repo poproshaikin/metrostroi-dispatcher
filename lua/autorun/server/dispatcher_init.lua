@@ -60,6 +60,14 @@ local function load()
         file.Exists(mapFile, "LUA") and mapFile or "none", "\n")
 end
 
+-- Re-include every module without a map change (GMod's auto-refresh does not
+-- always pick up changed included files). Timetables and markup are kept.
+concommand.Add("dispatcher_reload", function(ply)
+    if IsValid(ply) and not (game.SinglePlayer() or ply:IsSuperAdmin()) then return end
+    load()
+    if IsValid(ply) then ply:ChatPrint("[Dispatcher] Модули перезагружены.") end
+end)
+
 -- Metrostroi loads its own files from autorun too; wait until everything is in.
 if Dispatcher.Loaded then load() else
     hook.Add("Initialize", "Dispatcher_Load", function() Dispatcher.Loaded = true; load() end)
