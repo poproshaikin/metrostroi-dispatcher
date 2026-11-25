@@ -173,9 +173,9 @@ end
 
 -- Shift from the depot and back:
 --   depot track `from` -> exit platform -> `count` circles -> entry platform -> depot track `home`.
--- A circle = both terminals of the line reached once. After the circles the
--- train rides on to the depot entry station (it may be intermediate) and the
--- shift ends there.
+-- A circle = out to the far terminal and back. After the circles the train
+-- rides on to the depot entry station (it may be intermediate) and the shift
+-- ends there.
 function S.BuildDepotRoute(from, exitPl, count, home, entryPl)
     local depotDep = math.ceil((Line.Now() + cvDepotPrep:GetInt()) / 30) * 30
     if not Line.NextPlatform(exitPl) then exitPl = Line.OppositePlatform(exitPl) or exitPl end  -- exit onto a terminal's arrival side
@@ -193,26 +193,26 @@ function S.BuildDepotRoute(from, exitPl, count, home, entryPl)
         trips[#trips + 1] = trip
         pl, t, rev = S.AppendTurnover(trip)
     end
-    -- `count` = circles: every terminal of the line is reached `count` times
-    local function terminalVisits()
-        local visits = {}
+    -- `count` = circles: how many times the train reaches the FAR terminal (the one
+    -- the first trip from the depot runs to). Nekrasovka: 1 = Лух → Нижегородская →
+    -- Лух → depot (no Некрасовка); 2 = ... → Нижегородская → Некрасовка → Нижегородская → Лух → depot.
+    local function lastReal(trip)
+        for j = #trip.stops, 2, -1 do
+            local p = trip.stops[j].platform
+            if not p.siding and not p.depot then return p end
+        end
+    end
+    local far = lastReal(first) and lastReal(first).station
+    local function farVisits()
+        local n = 0
         for _, trip in ipairs(trips) do
-            for j = #trip.stops, 2, -1 do
-                local p = trip.stops[j].platform
-                if not p.siding and not p.depot then
-                    if not Line.NextPlatform(p) then visits[p.station.id] = (visits[p.station.id] or 0) + 1 end
-                    break
-                end
-            end
+            local p = lastReal(trip)
+            if p and p.station == far then n = n + 1 end
         end
-        local stations, minV = Line.GetStations(), math.huge
-        for _, st in ipairs({ stations[1], stations[#stations] }) do
-            minV = math.min(minV, visits[st.id] or 0)
-        end
-        return minV
+        return n
     end
     local guard = 0
-    while pl and terminalVisits() < count and guard < 40 do addTrip(); guard = guard + 1 end
+    while pl and farVisits() < count and guard < 40 do addTrip(); guard = guard + 1 end
 
     -- The depot is entered from `entryPl`, which may be an intermediate station
     -- (Nekrasovka: Лухмановская II): after the circles, ride on until a trip
