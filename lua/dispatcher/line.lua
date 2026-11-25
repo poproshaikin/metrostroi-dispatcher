@@ -369,8 +369,27 @@ end
 
 -- Line time in seconds: the same clock the station clocks show (UTC-based, as
 -- Metrostroi draws them with os.date("!...")). Use Line.FormatTime to print.
+--
+-- Metrostroi bug worked around here: its time globals go to clients as 32-bit
+-- floats, and "MetrostroiTY" (~1.8e9) loses up to ±64 s on the way (−32 s at
+-- UTC+1). The server computes with exact values, so its Metrostroi.GetSyncTime()
+-- differs from what every player's station clocks show. We repeat the client's
+-- math with the same float32 rounding, so the timetable matches the clocks.
+local function f32(x)
+    if x == 0 then return 0 end
+    local m, e = math.frexp(x)                         -- x = m * 2^e, 0.5 <= |m| < 1
+    return math.ldexp(math.floor(m * 16777216 + 0.5) / 16777216, e)   -- 24-bit mantissa
+end
+
 function Line.Now()
-    return Metrostroi.GetSyncTime and Metrostroi.GetSyncTime() or os.time()
+    local ty = GetGlobalFloat("MetrostroiTY", 0)
+    if ty == 0 then
+        return Metrostroi.GetSyncTime and Metrostroi.GetSyncTime() or os.time()
+    end
+    local T0 = f32(GetGlobalFloat("MetrostroiT0", 0)) + f32(ty)
+    local T1 = f32(GetGlobalFloat("MetrostroiT1", CurTime()))
+    local dT = (os.time() - T0 + (CurTime() % 1.0)) - (CurTime() - T1)
+    return os.time() - dT
 end
 
 function Line.FormatTime(t, withSeconds)
