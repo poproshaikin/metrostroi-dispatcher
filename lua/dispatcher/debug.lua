@@ -496,7 +496,7 @@ concommand.Add("dispatcher_ars", function(ply)
         add("  нет ALS_ARS")
     end
     local rel = {}
-    for k, v in SortedPairs(t) do
+    for k, v in SortedPairs(t:GetTable()) do
         if type(k) == "string" and (k:sub(1, 4) == "BSM_" or k:sub(1, 4) == "BUM_" or k:sub(1, 4) == "BIS_")
             and istable(v) and type(v.Value) == "number" and v.Value > 0 then
             rel[#rel + 1] = k
