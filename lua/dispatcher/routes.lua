@@ -142,9 +142,12 @@ function R.Set(S, r, cid)
             if switchOccupied(sw, cars) then return false, "на стрелке " .. name .. " стоит поезд" end
         end
     end
-    -- close the signal's other manual route first, like Metrostroi's own !sopen does
+    -- close the signal's other MANUAL route first (it stays "opened" otherwise).
+    -- Not for ordinary routes: Metrostroi's CloseRoute throws every switch of the
+    -- route to "+" (it compares an undefined SwitchState), even ones nobody asked for.
     local ent = S.ent
-    if ent.LastOpenedRoute and ent.LastOpenedRoute ~= r.index and ent.Routes[ent.LastOpenedRoute] then
+    local last = ent.LastOpenedRoute and ent.Routes[ent.LastOpenedRoute]
+    if last and last.Manual and ent.LastOpenedRoute ~= r.index then
         pcall(ent.CloseRoute, ent, ent.LastOpenedRoute)
     end
     local ok = pcall(ent.OpenRoute, ent, r.index)
