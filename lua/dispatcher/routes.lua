@@ -245,7 +245,20 @@ concommand.Add("dispatcher_route", function(ply, _, args)
     local st = c and Line.GetState(c)
     local ahead = R.SignalsAhead(st, ASK_DIST)
     local a = ahead[1]
-    if not a then Dispatcher.Chat(ply, "[ДЦХ] Впереди нет маршрутного светофора.") return end
+    if not a then
+        -- say what is near, to tell "none" from "facing the other way"
+        local g, near = G.Get(), {}
+        local P = g and st and st.onTrack and g.paths[st.path.id]
+        for _, S2 in ipairs(P and P.signals or {}) do
+            local d = math.abs(S2.x - st.x)
+            if d < 300 and isRouteSignal(S2) then
+                near[#near + 1] = Format("%s (%.0f м, для направления %s)", S2.name or "?", d, S2.dir > 0 and "+" or "-")
+            end
+        end
+        Dispatcher.Chat(ply, "[ДЦХ] Впереди нет маршрутного светофора." .. (#near > 0 and
+            Format(" Рядом: %s; ты едешь в направлении %s, путь #%s.", table.concat(near, ", "), st.dirPlus and "+" or "-", st.path.id) or ""))
+        return
+    end
     local S = a.S
     local q = Line.Lower(table.concat(args, " "))
     if q == "" then
