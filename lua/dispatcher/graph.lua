@@ -22,7 +22,7 @@
 local Line = Dispatcher.Line
 local G = Dispatcher.Graph or {}
 Dispatcher.Graph = G
-G.VERSION = 3   -- bump when the graph's structure changes (rebuilds a cached one after a reload)
+G.VERSION = 4   -- bump when the graph's structure changes (rebuilds a cached one after a reload)
 
 local U2M = 0.01905
 local SWITCH_RADIUS = 50   -- m: a switch this close to a junction belongs to it
@@ -114,7 +114,9 @@ function G.Build()
         local tp = sig.TrackPosition
         local P = tp and tp.path and g.paths[tp.path.id]
         if not P then continue end
-        local S = { ent = sig, name = sig.Name, path = P, x = tp.x, dir = sig.TrackDir and 1 or -1, routes = {} }
+        -- dir: the travel direction it governs. Metrostroi scans the blocks ahead of
+        -- a signal along TrackPosition.forward (CheckOccupation), so that is it.
+        local S = { ent = sig, name = sig.Name, path = P, x = tp.x, dir = tp.forward and 1 or -1, routes = {} }
         for k, r in ipairs(sig.Routes or {}) do
             local sws = {}
             for _, s in ipairs(string.Explode(",", r.Switches or "")) do
