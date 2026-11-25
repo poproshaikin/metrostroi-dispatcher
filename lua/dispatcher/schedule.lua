@@ -379,7 +379,9 @@ end
 --------------------------------------------------------------------------------
 function S.Assign(consist, trips)
     if not consist or not trips or #trips == 0 then return end
-    local a = { cid = consist.id, trips = trips, ti = 1, started = Line.Now() }
+    -- wagons: the train the timetable belongs to; it follows them through coupling
+    -- (another train attached) and uncoupling (cars left behind), see S.Reconcile
+    local a = { cid = consist.id, trips = trips, ti = 1, started = Line.Now(), wagons = table.Copy(consist.wagons) }
     trips[1].cur = 1
     -- The train is already standing at the first platform
     local st = Line.GetState(consist)
@@ -578,6 +580,48 @@ function S.ReportReady(consist, lead)
     S.ShiftAhead(a, newDep - s.dep)
     return newDep
 end
+
+--------------------------------------------------------------------------------
+-- Consist identity: a consist id (lowest entity index of its wagons) changes when
+-- trains are coupled or uncoupled. Every assignment follows its own wagons.
+--------------------------------------------------------------------------------
+function S.Rekey(old, new)
+    if old == new or S.Assignments[new] then return end
+    local a = S.Assignments[old]
+    S.Assignments[old], S.Assignments[new] = nil, a
+    a.cid = new
+    local O = Dispatcher.Orders
+    if O then
+        if O.Active[old] then O.Active[new], O.Active[old] = O.Active[old], nil; O.Active[new].cid = new end
+        if O.Log[old] then O.Log[new], O.Log[old] = O.Log[old], nil end
+    end
+    hook.Run("Dispatcher_Rekey", old, new)
+end
+
+function S.Reconcile()
+    local consists = Line.GetConsists()
+    local ids = {}
+    for cid in pairs(S.Assignments) do ids[#ids + 1] = cid end
+    for _, cid in ipairs(ids) do
+        local a = S.Assignments[cid]
+        if not a then continue end
+        if not a.wagons then
+            local c = Line.GetConsist(cid)
+            a.wagons = c and table.Copy(c.wagons) or {}
+        end
+        -- the consist that holds most of our own wagons
+        local own = {}
+        for _, w in ipairs(a.wagons) do if IsValid(w) then own[w] = true end end
+        local best, bestN = nil, 0
+        for _, c in ipairs(consists) do
+            local n = 0
+            for _, w in ipairs(c.wagons) do if own[w] then n = n + 1 end end
+            if n > bestN then best, bestN = c, n end
+        end
+        if best and best.id ~= cid then S.Rekey(cid, best.id) end
+    end
+end
+timer.Create("Dispatcher_Reconcile", 0.5, 0, S.Reconcile)
 
 -- Restored from a save and the driver hasn't taken the seat yet: the timetable
 -- waits (no lateness, no orders) — see persist.lua

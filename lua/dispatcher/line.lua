@@ -449,6 +449,32 @@ function Line.GetConsists()
         for _, w in ipairs(wagons) do id = math.min(id, w:EntIndex()) end
         list[#list + 1] = { id = id, wagons = wagons }
     end
+
+    -- Coupling / uncoupling changes the id: carry the per-consist memory over
+    -- (where it stopped, what it passed) from the id most of its wagons had.
+    Line._wagonOwner = Line._wagonOwner or setmetatable({}, { __mode = "k" })
+    local owner = Line._wagonOwner
+    for _, c in ipairs(list) do
+        if not Line._memory or Line._memory[c.id] then continue end
+        local count, best, bestN = {}, nil, 0
+        for _, w in ipairs(c.wagons) do
+            local o = owner[w]
+            if o and o ~= c.id then
+                count[o] = (count[o] or 0) + 1
+                if count[o] > bestN then best, bestN = o, count[o] end
+            end
+        end
+        if best and Line._memory[best] then
+            -- shallow copy: platforms must stay the same objects (compared with ==)
+            local m = {}
+            for k, v in pairs(Line._memory[best]) do m[k] = v end
+            Line._memory[c.id] = m
+        end
+    end
+    for _, c in ipairs(list) do
+        for _, w in ipairs(c.wagons) do owner[w] = c.id end
+    end
+
     consistCache, consistTime = list, CurTime()
     return list
 end

@@ -103,7 +103,8 @@ hook.Add("MetrostroiSave_Load", "Dispatcher", function(ext, cars)
         end
         if not consist then continue end
 
-        local a = { cid = consist.id, ti = sa.ti, started = sa.started and sa.started + shift, trips = {} }
+        local a = { cid = consist.id, ti = sa.ti, started = sa.started and sa.started + shift, trips = {},
+                    wagons = table.Copy(consist.wagons) }
         local ok = true
         for i, t in ipairs(sa.trips) do
             local trip, missing = loadTrip(t, shift)
