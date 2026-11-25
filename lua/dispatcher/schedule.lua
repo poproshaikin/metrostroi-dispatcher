@@ -402,11 +402,11 @@ local function advanceTrip(a, cid)
     return a.trips[a.ti]
 end
 
-hook.Add("Dispatcher_Arrive", "Dispatcher_Schedule", function(consist, st, platform, stopError)
+hook.Add("Dispatcher_Arrive", "Dispatcher_Schedule", function(consist, st, platform, stopError, arriveTime)
     local a = S.Assignments[consist.id]
     if not a or a.finished then return end
     local trip = a.trips[a.ti]
-    local now = Line.Now()
+    local now = arriveTime or Line.Now()
 
     -- Arrived at the first platform of the next trip (after turnover)
     -- (the siding at the end may have gone unregistered: then we are one stop short)

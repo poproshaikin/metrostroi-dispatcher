@@ -214,7 +214,7 @@ hook.Add("Think", "Dispatcher_DepotEvents", function()
         local head = c.wagons[1]
         local speed = 0
         for _, w in ipairs(c.wagons) do speed = math.max(speed, math.abs(w.Speed or 0)) end
-        local stopped = speed < 0.5
+        local stopped = speed < 1.5   -- physics jitter at rest
 
         if s and s.full and stopped and mem.depotArrived ~= s.track then
             mem.depotArrived, mem.depotMove = s.track, nil
@@ -225,7 +225,7 @@ hook.Add("Think", "Dispatcher_DepotEvents", function()
         elseif mem.depotArrived then
             if stopped then
                 mem.depotMove = nil
-            elseif not mem.depotMove and speed > 1 then
+            elseif not mem.depotMove and speed > 2 then
                 mem.depotMove = Line.Now()
             end
             if mem.depotMove and not (s and s.full and s.track == mem.depotArrived) then

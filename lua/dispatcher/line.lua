@@ -11,7 +11,8 @@
 -- Units: distances in metres along the track, speed in km/h.
 --
 -- Events (hook.Run), fired for consists that have a driver:
---   Dispatcher_Arrive (consist, state, platform, stopError)  stopped at a platform
+--   Dispatcher_Arrive (consist, state, platform, stopError, arriveTime)  stopped at a platform
+--                     arriveTime: Line.Now() when the train came to a stop
 --                     (or in a siding: platform.siding == true)
 --                     stopError: metres to the stop mark (+ short, - overrun)
 --   Dispatcher_Depart (consist, state, platform, departTime) left the platform;
@@ -24,7 +25,8 @@ Dispatcher.Line = Line
 local U2M          = 0.01905  -- source units -> metres
 local CAB_FRONT    = 470      -- local X of the wagon's cab end, units
 local STOP_OVERRUN = 15       -- metres past the stop mark still counted "at platform"
-local STOP_SPEED   = 0.5      -- km/h, below this the train is "stopped"
+local STOP_SPEED   = 1.5      -- km/h, below this the train is "stopped" (physics jitter at rest)
+local MOVE_SPEED   = 2        -- km/h, above this a stopped train "started moving"
 local SIDING_ACCEPT = 80      -- metres short of a siding's stop mark still counted "in the siding"
 
 --------------------------------------------------------------------------------
@@ -591,17 +593,33 @@ hook.Add("Think", "Dispatcher_LineEvents", function()
         if not st or not IsValid(st.driver) then continue end
         local mem = Line.GetMemory(c)
 
-        if st.at and st.stopped and mem.arrived ~= st.at then
-            mem.arrived, mem.last, mem.moveStart, mem.arrivedHead = st.at, st.at, nil, st.head
+        -- Arrival: the time is when the train first came to a stop at the platform;
+        -- it counts once it has stood for a second (speed jitters at rest) or the
+        -- doors are opened.
+        local arrivedNow
+        if st.at and mem.arrived ~= st.at then
+            if st.stopped then
+                if not mem.stopSince or mem.stopSince.pl ~= st.at then
+                    mem.stopSince = { pl = st.at, t = Line.Now(), ct = CurTime() }
+                end
+                arrivedNow = CurTime() - mem.stopSince.ct >= 1 or st.doors.left or st.doors.right
+            else
+                mem.stopSince = nil
+            end
+        end
+
+        if arrivedNow then
+            local t = mem.stopSince.t
+            mem.arrived, mem.last, mem.moveStart, mem.arrivedHead, mem.stopSince = st.at, st.at, nil, st.head, nil
             local err = st.stop == st.at and st.distToStop or nil
-            hook.Run("Dispatcher_Arrive", c, st, st.at, err)
+            hook.Run("Dispatcher_Arrive", c, st, st.at, err, t)
         elseif mem.arrived then
             -- Departure time = when the train started moving, not when the head
             -- cleared the platform (that is 15+ m and several seconds later).
             -- Creeping up to the stop mark and stopping again resets it.
             if st.stopped then
                 mem.moveStart = nil
-            elseif not mem.moveStart and st.speed > 1 then
+            elseif not mem.moveStart and st.speed > MOVE_SPEED then
                 mem.moveStart = Line.Now()
             end
             local pl = mem.arrived
