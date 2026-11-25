@@ -102,7 +102,12 @@ local HELP = {
     "  !график — план и факт по станциям (в консоли ~)",
     "  !где — что диспетчер видит про твой поезд (в консоли ~)",
     "  !понял — подтвердить приказ",
-    "  !оборот [станция] — запросить оборот (сократить рейс), без названия — ближайшая оборотная",
+    "Запросить приказ (станция — необязательно, по умолчанию ближайшая подходящая):",
+    "  !приказ — случайный приказ прямо сейчас",
+    "  !оборот [станция] — оборот (сократить рейс)",
+    "  !проследовать [станция] — проследовать станцию без остановки",
+    "  !задержка [сек] [станция] — задержать отправление (по умолчанию 120 с)",
+    "  !ограничение [км/ч] [станция] — ограничение скорости на перегоне до станции (по умолчанию 40)",
     "  !отмена — снять наряд",
     "  !тупики — размеченные оборотные тупики; !тупик [название] — разметить (стоя в тупике у знака, админ)",
     "  !знак — откалибровать знак остановки этой платформы (встать кабиной точно у знака, админ); !знак все — для всех",
@@ -140,11 +145,17 @@ local CHAT = {
     ["!тупик_удалить"] = "dispatcher_siding_del",
     ["!знак"] = "dispatcher_stopmark", ["!stopmark"] = "dispatcher_stopmark",
     ["!знак_сброс"] = "dispatcher_stopmark_reset",
+    ["!проследовать"] = "dispatcher_order_skip", ["!skip"] = "dispatcher_order_skip",
+    ["!задержка"] = "dispatcher_order_hold", ["!hold"] = "dispatcher_order_hold",
+    ["!ограничение"] = "dispatcher_order_restrict", ["!limit"] = "dispatcher_order_restrict",
+    ["!приказ"] = "dispatcher_order_random", ["!order"] = "dispatcher_order_random",
 }
 local SILENT = { dispatcher_trip = true, dispatcher_trip_cancel = true, dispatcher_ack = true,
     dispatcher_order_turnback = true, dispatcher_help = true,
     dispatcher_siding_add = true, dispatcher_sidings = true, dispatcher_siding_del = true,
-    dispatcher_stopmark = true, dispatcher_stopmark_reset = true }
+    dispatcher_stopmark = true, dispatcher_stopmark_reset = true,
+    dispatcher_order_skip = true, dispatcher_order_hold = true, dispatcher_order_restrict = true,
+    dispatcher_order_random = true }
 hook.Add("PlayerSay", "Dispatcher_ChatCommands", function(ply, text)
     local args = string.Explode(" ", string.Trim(text))
     local cmd = CHAT[string.lower(args[1] or "")]

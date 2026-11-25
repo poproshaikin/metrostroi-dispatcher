@@ -169,6 +169,21 @@ function S.Hold(trip, platform, seconds)
     return true
 end
 
+-- Speed restriction on the run into `platform` (from the previous stop):
+-- the planned run time grows to what the limit allows. limit in km/h.
+function S.Restrict(trip, platform, limit)
+    local s, j = findStop(trip, platform)
+    if not s or j < 2 then return false end
+    local d = Line.Distance(trip.stops[j - 1].platform, platform)
+    if d then
+        local need = math.Round(d / (limit / 3.6) + 20)
+        if need > s.run then s.runOrig, s.run = s.run, need end
+    end
+    s.restricted = limit
+    S.Recalc(trip)
+    return true
+end
+
 -- Move the whole trip by `seconds`.
 function S.Shift(trip, seconds)
     trip.stops[1].dep = trip.stops[1].dep + seconds
@@ -289,7 +304,10 @@ hook.Add("Dispatcher_Arrive", "Dispatcher_Schedule", function(consist, st, platf
                 if not m.skip then m.missed = true; hook.Run("Dispatcher_StopMissed", consist.id, trip, m) end
             end
             local prev = trip.stops[j - 1]
-            if j - 1 == trip.cur and prev.factDep and not prev.skip then learn(prev.platform, s.platform, now - prev.factDep) end
+            -- learn only from a normal run (no stops skipped, no speed restriction)
+            if j - 1 == trip.cur and prev.factDep and not prev.skip and not s.restricted then
+                learn(prev.platform, s.platform, now - prev.factDep)
+            end
 
             s.factArr, s.stopError = now, stopError
             trip.cur = j

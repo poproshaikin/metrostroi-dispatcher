@@ -105,6 +105,7 @@ local function printTimetable(ply, a)
         out(ply, Format("== Trip %d%s%s", trip.id, ti == a.ti and "  <- current" or "", trip.done and "  (done)" or ""))
         for j, s in ipairs(trip.stops) do
             local flags = (s.skip and " SKIP" or "") .. (s.missed and " MISSED" or "") .. (s.shortDwell and " SHORT-DWELL" or "")
+                .. (s.hold and Format(" HOLD+%ds", s.hold) or "") .. (s.restricted and Format(" LIMIT %d", s.restricted) or "")
             out(ply, Format("  %s %-22s arr %s %-7s dep %s %-7s run %3ds%s%s",
                 (ti == a.ti and j == trip.cur) and ">" or " ",
                 s.platform.title,
@@ -145,6 +146,8 @@ concommand.Add("dispatcher_schedule", function(ply)
     local a = S.GetAssignment(Line.GetPlayerConsist(ply))
     if not a then out(ply, "no timetable, use dispatcher_trip") return end
     out(ply, "Now " .. T(Line.Now()))
+    local order = Dispatcher.Orders and Dispatcher.Orders.Active[a.cid]
+    if order then out(ply, "Active order: " .. (order.text or order.kind) .. (order.acked and "  [ack]" or "  [NOT ACKED]")) end
     printTimetable(ply, a)
 end)
 
