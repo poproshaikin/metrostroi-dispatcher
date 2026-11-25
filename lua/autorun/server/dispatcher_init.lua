@@ -55,6 +55,7 @@ local function load()
     include("dispatcher/depot.lua")
     include("dispatcher/graph.lua")
     include("dispatcher/routes.lua")
+    include("dispatcher/invite.lua")
     include("dispatcher/persist.lua")
     include("dispatcher/spawn.lua")
     include("dispatcher/debug.lua")
@@ -67,7 +68,9 @@ end
 -- always pick up changed included files). Timetables and markup are kept.
 concommand.Add("dispatcher_reload", function(ply)
     if IsValid(ply) and not (game.SinglePlayer() or ply:IsSuperAdmin()) then return end
-    load()
+    -- re-run this file itself: picks up new modules in the list without a map change
+    -- (Dispatcher.Loaded is set, so the file's last lines call load())
+    include("autorun/server/dispatcher_init.lua")
     if IsValid(ply) then ply:ChatPrint("[Dispatcher] Модули перезагружены.") end
 end)
 

@@ -169,7 +169,7 @@ end)
 -- Choosing a route
 --------------------------------------------------------------------------------
 -- Route signals ahead of a train state, nearest first: { {S, dist}, ... }
-function R.SignalsAhead(st, maxDist)
+function R.SignalsAhead(st, maxDist, any)   -- any: every signal, not only route ones
     local g = G.Get()
     if not g or not st or not st.onTrack then return {} end
     local P = g.paths[st.path.id]
@@ -178,7 +178,7 @@ function R.SignalsAhead(st, maxDist)
     local list = {}
     for _, S in ipairs(P.signals) do
         local d = (S.x - st.x) * s
-        if S.dir == s and d > -5 and d < maxDist and isRouteSignal(S) then list[#list + 1] = { S = S, dist = d } end
+        if S.dir == s and d > -5 and d < maxDist and (any or isRouteSignal(S)) then list[#list + 1] = { S = S, dist = d } end
     end
     table.sort(list, function(a, b) return a.dist < b.dist end)
     return list
