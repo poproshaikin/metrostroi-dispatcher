@@ -29,7 +29,7 @@ local cvUnload = CreateConVar("dispatcher_unload", "60", FCVAR_ARCHIVE,
 local cvCab   = CreateConVar("dispatcher_cabchange", "120", FCVAR_ARCHIVE, "Planned cab change time in a siding, s")
 local cvDepotRun  = CreateConVar("dispatcher_depot_run", "300", FCVAR_ARCHIVE,
     "Planned run between a depot track and the line (until learned), s")
-local cvDepotPrep = CreateConVar("dispatcher_depot_prep", "600", FCVAR_ARCHIVE,
+local cvDepotPrep = CreateConVar("dispatcher_depot_prep", "180", FCVAR_ARCHIVE,
     "Time to prepare the train before leaving the depot, s")
 
 local FALLBACK_SPEED = 45   -- km/h average, when Metrostroi can't estimate a run
