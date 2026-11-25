@@ -464,3 +464,47 @@ concommand.Add("dispatcher_export", function(ply)
     file.Write(fname, text)
     say(ply, "[Dispatcher] Экспортировано в garrysmod/data/" .. fname)
 end)
+
+-- dispatcher_ars: why does ARS not allow driving (ЛКВД lit)? Dumps the head cab's
+-- ARS receiver, ARS unit and its relays (81-717 style: BSM_*, BUM_*), controller.
+concommand.Add("dispatcher_ars", function(ply)
+    local c = IsValid(ply) and Line.GetPlayerConsist(ply)
+    local st = c and Line.GetState(c)
+    local t = st and st.head
+    if not IsValid(t) then Dispatcher.Chat(ply, "[ДЦХ] Сядьте в кабину.") return end
+    local out = {}
+    local function add(s) out[#out + 1] = s end
+    local function nums(sys, keys)
+        local parts = {}
+        for _, k in ipairs(keys) do
+            local v = sys and sys[k]
+            if type(v) == "number" then parts[#parts + 1] = k .. "=" .. math.Round(v, 2)
+            elseif type(v) == "boolean" then parts[#parts + 1] = k .. "=" .. tostring(v) end
+        end
+        return table.concat(parts, " ")
+    end
+    add("[ДЦХ] АРС вагона " .. t:GetClass() .. ":")
+    add("  приём: " .. (t.ALSCoil and nums(t.ALSCoil, { "Enabled", "F1", "F2", "F3", "F4", "F5", "F6", "NoFreq", "Speed" }) or "нет ALSCoil"))
+    local ars = t.ALS_ARS
+    if ars then
+        local keys = {}
+        for k, v in SortedPairs(ars) do
+            if type(k) == "string" and (type(v) == "number" or type(v) == "boolean") and #k <= 12 then keys[#keys + 1] = k end
+        end
+        add("  блок АРС: " .. nums(ars, keys))
+    else
+        add("  нет ALS_ARS")
+    end
+    local rel = {}
+    for k, v in SortedPairs(t) do
+        if type(k) == "string" and (k:sub(1, 4) == "BSM_" or k:sub(1, 4) == "BUM_" or k:sub(1, 4) == "BIS_")
+            and istable(v) and type(v.Value) == "number" and v.Value > 0 then
+            rel[#rel + 1] = k
+        end
+    end
+    add("  включены реле: " .. (#rel > 0 and table.concat(rel, " ") or "нет"))
+    if t.Panel then add("  лампы: " .. nums(t.Panel, { "LKVD", "LKVC", "LSN", "RedRP", "GreenRP", "SD", "LST", "LVD", "KT" })) end
+    if t.KV then add("  контроллер: " .. nums(t.KV, { "ControllerPosition", "ReverserPosition", "RealControllerPosition" })) end
+    for _, l in ipairs(out) do Dispatcher.Chat(ply, l, HUD_PRINTCONSOLE) end
+    Dispatcher.Chat(ply, "[ДЦХ] Состояние АРС выведено в консоль (~).")
+end)
