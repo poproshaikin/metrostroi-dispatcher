@@ -268,14 +268,60 @@ function G.Describe()
     return lines
 end
 
--- Marks for the client (purple): every junction
+-- Where each position of a named switch leads, from all signal routes through it:
+-- { ["main"] = { [pathId] = { signalNames... } }, ["alt"] = {...} }
+function G.SwitchOptions(name)
+    local g = G.Get()
+    local opts = { main = {}, alt = {} }
+    if not g then return opts end
+    for _, L in ipairs(g.links) do
+        local pos = L.route.switches[name]
+        if pos then
+            local t = opts[pos][L.to.path.id] or {}
+            opts[pos][L.to.path.id] = t
+            if L.to.name and not table.HasValue(t, L.to.name) then t[#t + 1] = L.to.name end
+        end
+    end
+    return opts
+end
+
+local function optText(set)
+    local parts = {}
+    for pid, names in SortedPairs(set) do
+        parts[#parts + 1] = "#" .. pid .. (#names > 0 and (" (" .. table.concat(names, "/") .. ")") or "")
+    end
+    return #parts > 0 and table.concat(parts, ", ") or nil
+end
+
+-- Marks for the client (purple): every switch with where each position leads,
+-- and joins that have no switch of their own
 function G.Marks()
     local g = G.Get()
     local marks = {}
     if not g then return marks end
+    local covered = {}
+    for _, sw in ipairs(ents.FindByClass("gmod_track_switch")) do
+        local name = sw.Name
+        if not name or name == "" then continue end
+        local o = G.SwitchOptions(name)
+        local plus, minus = optText(o.main), optText(o.alt)
+        local text = "Стрелка " .. name
+        if plus or minus then
+            text = text .. ": + → " .. (plus or "прямо") .. ";  − → " .. (minus or "?")
+        else
+            -- not in any route: fall back to the track join it belongs to
+            for _, J in ipairs(g.junctions) do
+                if J.switch == sw then text = Format("%s: путь #%d → #%d", text, J.host.id, J.branch.id) break end
+            end
+        end
+        marks[#marks + 1] = { sw:GetPos() + Vector(0, 0, 40), text, 5 }
+        covered[sw] = true
+    end
     for _, J in ipairs(g.junctions) do
-        local pos = Metrostroi.GetTrackPosition(J.host.raw, J.hostX) or J.pos
-        marks[#marks + 1] = { pos, Format("Стрелка %s: путь #%d → #%d", J.switchName or "?", J.host.id, J.branch.id), 5 }
+        if not (IsValid(J.switch) and covered[J.switch]) then
+            local pos = Metrostroi.GetTrackPosition(J.host.raw, J.hostX) or J.pos
+            marks[#marks + 1] = { pos, Format("Соединение путей #%d → #%d (стрелка не найдена)", J.host.id, J.branch.id), 5 }
+        end
     end
     return marks
 end
