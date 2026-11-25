@@ -263,9 +263,49 @@ local function depotHome(a)
     return s and s.depotEnd and s.platform
 end
 
+-- Earliest planned departure of the trip after `trip`, given how `trip` ends
+-- (same rules as S.AppendTurnover).
+local function nextDepAfter(trip)
+    local last = trip.stops[#trip.stops]
+    if last.depotEnd then return end
+    if last.platform.siding then
+        return last.dep and (last.dep + last.run + 20 + cvDwell:GetInt())
+    end
+    if last.platform.turnHere then return last.arr + cvUnload:GetInt() + cvCab:GetInt() end
+    return last.arr + cvTurn:GetInt()
+end
+
+-- After a trip's plan changed (order, delay), push the later trips back so that
+-- each still has its turnover time. Never pulls them earlier; trips already
+-- under way are not touched.
+function S.Propagate(a)
+    for i = 1, #a.trips - 1 do
+        local n = a.trips[i + 1]
+        local started = (i + 1 < a.ti) or (i + 1 == a.ti and ((n.cur or 1) > 1 or n.stops[1].factDep))
+        local need = not started and nextDepAfter(a.trips[i])
+        if need and n.stops[1].dep < need then
+            n.stops[1].dep = need
+            S.Recalc(n)
+        end
+    end
+end
+
+local function ownerOf(trip)
+    for _, a in pairs(S.Assignments) do
+        for _, t in ipairs(a.trips) do if t == trip then return a end end
+    end
+end
+
 --------------------------------------------------------------------------------
 -- Changing the plan (for orders.lua)
 --------------------------------------------------------------------------------
+-- Recalc a changed trip and keep the later trips' turnovers
+local function changed(trip)
+    S.Recalc(trip)
+    local a = ownerOf(trip)
+    if a then S.Propagate(a) end
+end
+
 local function findStop(trip, platform)
     for j, s in ipairs(trip.stops) do
         if s.platform == platform then return s, j end
@@ -277,7 +317,7 @@ function S.SkipStop(trip, platform)
     local s = findStop(trip, platform)
     if not s then return false end
     s.skip = true
-    S.Recalc(trip)
+    changed(trip)
     return true
 end
 
@@ -286,7 +326,7 @@ function S.Hold(trip, platform, seconds)
     local s = findStop(trip, platform)
     if not s or not s.dep then return false end
     s.hold = (s.hold or 0) + seconds
-    S.Recalc(trip)
+    changed(trip)
     return true
 end
 
@@ -301,14 +341,14 @@ function S.Restrict(trip, platform, limit)
         if need > s.run then s.runOrig, s.run = s.run, need end
     end
     s.restricted = limit
-    S.Recalc(trip)
+    changed(trip)
     return true
 end
 
 -- Move the whole trip by `seconds`.
 function S.Shift(trip, seconds)
     trip.stops[1].dep = trip.stops[1].dep + seconds
-    S.Recalc(trip)
+    changed(trip)
 end
 
 -- Short turn: end the current trip at `platform` (+ its siding, if marked),

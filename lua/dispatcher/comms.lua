@@ -91,8 +91,16 @@ hook.Add("Dispatcher_TripDone", "Dispatcher_Comms", function(cid, trip)
         Comms.Say(cid, Format("Рейс %d окончен, следуйте по графику.", trip.id))
     elseif nxt then
         local first = nxt.stops[1]
-        Comms.Say(cid, Format("Рейс %d окончен. Оборот, отправление со ст. %s (путь %d) в %s.",
-            trip.id, stName(first), first.platform.index, Line.FormatTime(first.dep)))
+        local late = Line.Now() - first.dep
+        if late > S.Tolerance() then
+            -- the planned departure has already passed: say so instead of a time in the past
+            Comms.Say(cid, Format("Рейс %d окончен. Отправление со ст. %s (путь %d) по графику было в %s — "
+                .. "опаздываете на %s, отправляйтесь, как только будете готовы.",
+                trip.id, stName(first), first.platform.index, Line.FormatTime(first.dep), dur(late)))
+        else
+            Comms.Say(cid, Format("Рейс %d окончен. Оборот, отправление со ст. %s (путь %d) в %s.",
+                trip.id, stName(first), first.platform.index, Line.FormatTime(first.dep)))
+        end
     else
         Comms.Say(cid, Format("Рейс %d окончен.", trip.id))
     end
