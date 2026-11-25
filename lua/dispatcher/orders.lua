@@ -243,7 +243,7 @@ timer.Create("Dispatcher_RandomOrders", 15, 0, function()
     if chance <= 0 then return end
     local p = 1 - (1 - math.min(chance, 1)) ^ (15 / 60)   -- per-minute chance -> per 15 s tick
     for cid, a in pairs(S.Assignments) do
-        if a.finished or O.Active[cid] then continue end
+        if a.finished or O.Active[cid] or S.IsPaused(a) then continue end
         local trip = a.trips[a.ti]
         -- limited per trip, only while running, not right after the previous one
         if (trip.ordersGiven or 0) >= cvMax:GetInt() or not trip.stops[trip.cur or 1].factDep then continue end
@@ -268,7 +268,7 @@ end
 
 timer.Create("Dispatcher_OrderAck", 5, 0, function()
     for cid, order in pairs(O.Active) do
-        if order.acked or order.state ~= "issued" then continue end
+        if order.acked or order.state ~= "issued" or S.IsPaused(S.Assignments[cid]) then continue end
         if not order.repeated and Line.Now() - order.issued > ACK_TIMEOUT then
             order.repeated = true
             say(cid, "Повторяю. " .. order.text)

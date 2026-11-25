@@ -245,6 +245,16 @@ function Line.SidingFor(platform, exceptConsist)
     return list[Line._sidingTurn % #list + 1]
 end
 
+-- Platform / siding / depot track by its stable key ("101/1", "siding:<name>", "depot:<name>")
+function Line.PlatformByKey(key)
+    if not key or not build() then return end
+    local depotName = key:match("^depot:(.+)$")
+    if depotName then return Dispatcher.Depot and Dispatcher.Depot.Track(depotName) end
+    for _, pl in ipairs(cache.platforms) do
+        if pl.key == key then return pl end
+    end
+end
+
 -- Can a train that arrived at `platform` turn back here (dead end or crossover)?
 function Line.CanTurnBack(platform)
     if not platform or platform.siding then return false end

@@ -230,7 +230,7 @@ end)
 -- Running late in the tunnel: one reminder per run
 timer.Create("Dispatcher_CommsLate", 5, 0, function()
     for cid, a in pairs(S.Assignments) do
-        if a.finished then continue end
+        if a.finished or S.IsPaused(a) then continue end
         local c = Line.GetConsist(cid)
         local status = c and S.GetStatus(c)
         if not status or not status.eta then continue end

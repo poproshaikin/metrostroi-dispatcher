@@ -475,7 +475,7 @@ end)
 -- the head left the platform's stop mark behind and the train never stopped.
 timer.Create("Dispatcher_ScheduleWatch", 0.5, 0, function()
     for cid, a in pairs(S.Assignments) do
-        if a.finished then continue end
+        if a.finished or S.IsPaused(a) then continue end
         local trip = a.trips[a.ti]
         local cur = trip.stops[trip.cur]
         local nxt = trip.stops[trip.cur + 1]
@@ -504,3 +504,9 @@ hook.Add("Dispatcher_StopDepart", "Dispatcher_ScheduleChecks", function(cid, tri
 end)
 
 S.Tolerance = function() return cvTol:GetInt() end
+
+-- Restored from a save and the driver hasn't taken the seat yet: the timetable
+-- waits (no lateness, no orders) — see persist.lua
+function S.IsPaused(a)
+    return a and a.restored ~= nil and not a.restored.told
+end

@@ -53,6 +53,7 @@ local function load()
     include("dispatcher/comms.lua")
     include("dispatcher/orders.lua")
     include("dispatcher/depot.lua")
+    include("dispatcher/persist.lua")
     include("dispatcher/debug.lua")
 
     MsgC(Color(120, 200, 255), "[Dispatcher] loaded, map config: ",
