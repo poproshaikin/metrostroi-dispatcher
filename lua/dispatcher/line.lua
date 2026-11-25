@@ -440,25 +440,11 @@ function Line.GetConsists()
     local seen, list = {}, {}
     for _, e in ipairs(ents.FindByClass("gmod_subway_*")) do
         if not isWagon(e) or seen[e] then continue end
-        -- mechanically coupled cars (FrontTrain / RearTrain), plus Metrostroi's
-        -- electrical WagonList: a fresh train's WagonList may not be built yet,
-        -- and cars of different series can be coupled without electric connection
-        local wagons, stack = {}, { e }
-        while #stack > 0 do
-            local w = table.remove(stack)
-            if isWagon(w) and not seen[w] then
-                seen[w] = true
-                wagons[#wagons + 1] = w
-                stack[#stack + 1] = w.FrontTrain
-                stack[#stack + 1] = w.RearTrain
-                for _, cp in ipairs({ w.FrontCouple, w.RearCouple }) do
-                    if IsValid(cp) and IsValid(cp.CoupledEnt) then
-                        stack[#stack + 1] = cp.CoupledEnt:GetNW2Entity("TrainEntity")
-                    end
-                end
-                for _, x in ipairs(w.WagonList or {}) do stack[#stack + 1] = x end
-            end
+        local wagons = {}
+        for _, w in ipairs(e.WagonList or { e }) do
+            if isWagon(w) and not seen[w] then seen[w] = true; wagons[#wagons + 1] = w end
         end
+        if not seen[e] then seen[e] = true; wagons[#wagons + 1] = e end
         local id = math.huge
         for _, w in ipairs(wagons) do id = math.min(id, w:EntIndex()) end
         list[#list + 1] = { id = id, wagons = wagons }
