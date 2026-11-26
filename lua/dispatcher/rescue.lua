@@ -398,7 +398,9 @@ concommand.Add("dispatcher_rescue", function(ply, _, args)
     end
     if RS.Missions[c.id] then Dispatcher.Chat(ply, "[ДЦХ] Вывод уже идёт. !вывод отмена — отменить.") return end
 
-    local function start()
+    local tries = 0
+    local start
+    function start()
         if not IsValid(ply) then return end
         local c2 = Line.GetPlayerConsist(ply)
         local st2 = c2 and Line.GetState(c2)
@@ -407,16 +409,21 @@ concommand.Add("dispatcher_rescue", function(ply, _, args)
         if b then begin(c2, st2, table.Copy(b.wagons), d) return end
         local SP = Dispatcher.Spawn
         if not SP then Dispatcher.Chat(ply, "[ДЦХ] Нет модуля спавна.") return end
-        local info, err = SP.SpawnBrokenAhead(c2, { minAhead = 700, maxAhead = 3500 })
+        local info, err = SP.SpawnBrokenAhead(c2, { minAhead = 700, maxAhead = 3500, onFail = function()
+            -- it went wrong (physics / off the rails) and was removed: try again a few times
+            tries = tries + 1
+            if tries < 3 then timer.Simple(1, start) else Dispatcher.Chat(ply, "[ДЦХ] Неисправный поезд не встаёт ровно, попробуйте в другом месте.") end
+        end })
         if not info then Dispatcher.Chat(ply, "[ДЦХ] Неисправный поезд поставить не удалось: " .. err .. ".") return end
         -- the cars settle for a few seconds before they count as a train
-        timer.Simple(6, function()
+        timer.Simple(8, function()
             if not IsValid(ply) then return end
             local c3 = Line.GetPlayerConsist(ply)
             local st3 = c3 and Line.GetState(c3)
             local ok = {}
             for _, t in ipairs(info.trains) do if IsValid(t) then ok[#ok + 1] = t end end
-            if not st3 or #ok == 0 then Dispatcher.Chat(ply, "[ДЦХ] Неисправный поезд не встал, попробуйте ещё раз.") return end
+            if #ok == 0 then return end   -- removed as crooked: onFail spawns again
+            if not st3 then Dispatcher.Chat(ply, "[ДЦХ] Сядьте на место машиниста и повторите !вывод.") return end
             begin(c3, st3, ok, info.distance)
         end)
     end

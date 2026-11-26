@@ -333,6 +333,46 @@ function SP.SpawnTrain(fam, wagnum, path, xFront, dirPlus, owner, onFail)
             if IsValid(t) then t.IgnoreEngine = false; SP.MakeBroken(t) end
         end
     end)
+    -- a bogey may settle sunk into the rails / off them (seen on the outer bogey of
+    -- the last car): find the odd one out by its distance from the track axis,
+    -- rerail that car, and if it is still off, remove the whole train
+    local function badCars()
+        local list = {}
+        for _, t in ipairs(trains) do
+            for _, b in ipairs({ t.FrontBogey, t.RearBogey }) do
+                if IsValid(b) then
+                    local p = Metrostroi.GetPositionOnTrack(b:GetPos(), b:GetAngles())[1]
+                    list[#list + 1] = { car = t, d = p and p.distance }
+                end
+            end
+        end
+        local ds = {}
+        for _, e in ipairs(list) do if e.d then ds[#ds + 1] = e.d end end
+        table.sort(ds)
+        local med = ds[math.ceil(#ds / 2)]
+        local bad, seen, info = {}, {}, {}
+        for _, e in ipairs(list) do
+            info[#info + 1] = e.d and Format("%.0f", e.d) or "-"
+            if (not e.d or not med or math.abs(e.d - med) > 12) and not seen[e.car] then
+                seen[e.car] = true
+                bad[#bad + 1] = e.car
+            end
+        end
+        return bad, table.concat(info, " ")
+    end
+    timer.Simple(5, function()
+        local bad, info = badCars()
+        if #bad == 0 then return end
+        MsgC(Color(255, 200, 80), "[Dispatcher] Broken train: bogey off the rails (distances " .. info .. "), rerailing\n")
+        for _, t in ipairs(bad) do if IsValid(t) then pcall(Metrostroi.RerailTrain, t) end end
+        timer.Simple(2, function()
+            local bad2, info2 = badCars()
+            if #bad2 == 0 then return end
+            MsgC(Color(255, 120, 80), "[Dispatcher] Broken train still off the rails (" .. info2 .. "), removed\n")
+            removeAll(trains)
+            if onFail then onFail() end
+        end)
+    end)
 
     -- safety: if anything flies off in the first seconds, remove the whole train
     local watchName = "Dispatcher_SpawnWatch_" .. trains[1]:EntIndex()
