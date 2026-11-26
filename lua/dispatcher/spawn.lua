@@ -78,11 +78,7 @@ local function weight(c, f)
     return 10 * 0.9 ^ ((c.year - f.year) / 5)
 end
 
-local cvMixed = CreateConVar("dispatcher_broken_mixed", "0", FCVAR_ARCHIVE,
-    "1: the broken train may be another (mechanically compatible) series; 0: only the driver's own series (mixed series' train wires often do not work together)")
-
 function SP.PickFamily(f)
-    if not cvMixed:GetBool() then return (installed(f.head) and installed(f.interim)) and f or nil end
     local list = SP.Compatible(f)
     if #list == 0 then return end
     local total = 0
