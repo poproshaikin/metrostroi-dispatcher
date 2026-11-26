@@ -253,7 +253,9 @@ local function placeCar(ent, path, xCenter, s, rot)
     local pos, dir = SP.TrackAt(path, xCenter)
     local fwd = dir * (s * (rot and -1 or 1))
     ent:SetPos(pos + Vector(0, 0, 60))
-    ent:SetAngles(Angle(0, fwd:Angle().y, 0))
+    -- keep the gradient: with the body level on a slope the end bogeys sink into or float above the rails
+    local a = fwd:Angle()
+    ent:SetAngles(Angle(a.p, a.y, 0))
     for _, part in ipairs({ ent.FrontBogey, ent.RearBogey, ent.FrontCouple, ent.RearCouple }) do
         if IsValid(part) and part.SpawnPos then
             part:SetPos(ent:LocalToWorld(part.SpawnPos))
