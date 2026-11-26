@@ -280,7 +280,8 @@ hook.Add("Think", "Dispatcher_Invite", function()
         if not st or not IsValid(st.driver) or not st.onTrack then continue end
         local mem = Line.GetMemory(c)
         local ars = I.ArsStop(st)
-        if not ars or I.Active[c.id] or exempt(c, st) then
+        local onMission = Dispatcher.Rescue and Dispatcher.Rescue.CoversOCh and Dispatcher.Rescue.CoversOCh(c.id)
+        if not ars or I.Active[c.id] or onMission or exempt(c, st) then
             mem.arsHeld = nil
             continue
         end

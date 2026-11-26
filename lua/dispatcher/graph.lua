@@ -409,7 +409,7 @@ function G.Crossovers()
             for _, n in ipairs(L.route.order or {}) do sws[#sws + 1] = n .. (L.route.switches[n] == "alt" and "-" or "+") end
             list[#list + 1] = { from = P, to = Q, x = L.from.x, toX = L.to.x, dir = L.from.dir, toDir = L.to.dir,
                 wrong = nd ~= nil and L.to.dir ~= nd, how = "светофор " .. (L.from.name or "?") .. " → " .. (L.to.name or "?"),
-                switches = table.concat(sws, ",") }
+                switches = table.concat(sws, ","), signal = L.from, route = L.route }
         end
     end
     -- crossover paths in the track data (both ends on main paths)
@@ -424,7 +424,8 @@ function G.Crossovers()
                 local nd = G.NormalDir(J2.host)
                 list[#list + 1] = { from = J1.host, to = J2.host, x = J1.hostX, toX = J2.hostX, dir = dir1, toDir = dir2,
                     wrong = nd ~= nil and dir2 ~= nd, how = "съезд #" .. C.id,
-                    switches = (J1.switchName or "?") .. "-, " .. (J2.switchName or "?") .. "-" }
+                    switches = (J1.switchName or "?") .. "-, " .. (J2.switchName or "?") .. "-",
+                    sw = (J1.switchName and J2.switchName) and { [J1.switchName] = "alt", [J2.switchName] = "alt" } or nil }
             end
         end
     end

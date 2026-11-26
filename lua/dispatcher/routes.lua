@@ -205,6 +205,9 @@ end
 
 -- The route at S for this train
 function R.Choose(S, consist)
+    -- a running scenario (rescue) may want a particular route here
+    local forced = Dispatcher.Rescue and Dispatcher.Rescue.RouteFor and Dispatcher.Rescue.RouteFor(S, consist)
+    if forced then return forced, "plan" end
     local g = G.Get()
     local want = plannedPath(consist)
     if want then

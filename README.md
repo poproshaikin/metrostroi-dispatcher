@@ -12,6 +12,7 @@ lua/dispatcher/line.lua                  Line: фасад над API Метро�
 lua/dispatcher/graph.lua                 граф путей: пути, съезды, тупики, светофоры и их маршруты
 lua/dispatcher/routes.lua                маршруты на светофорах (сами и !маршрут)
 lua/dispatcher/invite.lua                пригласительный по запросу, только при причине
+lua/dispatcher/rescue.lua                сценарий вывода неисправного поезда: планировщик до депо и ведение по шагам
 lua/dispatcher/debug.lua                 отладочные команды
 lua/dispatcher/maps/<map>.lua            опциональный конфиг карты (поправки названий и т.п.)
 ```
