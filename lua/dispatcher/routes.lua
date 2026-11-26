@@ -168,6 +168,30 @@ timer.Create("Dispatcher_RouteRelease", 1, 0, function()
     end
 end)
 
+-- Metrostroi throws a switch set to "-" back to "+" 20 s after it was last
+-- commanded, unless its own track check sees a train on it. A route opened by a
+-- signal does not even count as a command, and the check misses cars on the
+-- branch side: a long slow train (a rescue pulling a dead one at 5 km/h) gets the
+-- switch thrown under its middle cars and derails. Keep every "-" switch with a
+-- car near it from returning.
+timer.Create("Dispatcher_SwitchHold", 0.5, 0, function()
+    local cars
+    for _, sw in ipairs(ents.FindByClass("gmod_track_switch")) do
+        if sw.AlternateTrack then
+            cars = cars or carPositions()
+            if switchOccupied(sw, cars) then sw.LastSignalTime = CurTime() end
+        end
+    end
+end)
+
+-- A switch that moved with a car on it: say so in the console (diagnostics)
+hook.Add("MetrostroiChangedSwitch", "Dispatcher_SwitchWatch", function(sw, alt)
+    if not IsValid(sw) then return end
+    if switchOccupied(sw, carPositions()) then
+        MsgC(Color(255, 120, 80), Format("[Dispatcher] Стрелка %s переведена на %s под поездом!\n", sw.Name or "?", alt and "-" or "+"))
+    end
+end)
+
 --------------------------------------------------------------------------------
 -- Choosing a route
 --------------------------------------------------------------------------------

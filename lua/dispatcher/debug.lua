@@ -523,7 +523,7 @@ concommand.Add("dispatcher_off", function(ply)
         end
     end
     local timers = { "Dispatcher_CommsLate", "Dispatcher_Debug", "Dispatcher_RandomOrders", "Dispatcher_OrderAck",
-        "Dispatcher_OrderSpeed", "Dispatcher_RouteRelease", "Dispatcher_ScheduleWatch", "Dispatcher_Reconcile" }
+        "Dispatcher_OrderSpeed", "Dispatcher_RouteRelease", "Dispatcher_ScheduleWatch", "Dispatcher_Reconcile", "Dispatcher_SwitchHold" }
     for _, t in ipairs(timers) do timer.Remove(t) end
     local cars, broken = 0, 0
     for _, e in ipairs(ents.FindByClass("gmod_subway_*")) do
