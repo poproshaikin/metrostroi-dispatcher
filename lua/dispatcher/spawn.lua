@@ -473,3 +473,14 @@ concommand.Add("dispatcher_remove_broken", function(ply)
     local n = SP.RemoveSpawned()
     Dispatcher.Chat(ply, Format("[Dispatcher] Убрано вагонов неисправных поездов: %d.", n))
 end)
+
+-- Command: dispatcher_repair_broken (chat: !неисправный_починить) — the dispatcher's
+-- broken trains get their motors back (for testing a spawned train by driving it)
+concommand.Add("dispatcher_repair_broken", function(ply)
+    if IsValid(ply) and not (game.SinglePlayer() or ply:IsSuperAdmin()) then return end
+    local n = 0
+    for _, e in ipairs(ents.GetAll()) do
+        if e.DispatcherBroken then e.DispatcherBroken = nil; n = n + 1 end
+    end
+    Dispatcher.Chat(ply, Format("[Dispatcher] Исправлено вагонов: %d. Убрать их по-прежнему можно !неисправный_убрать.", n))
+end)
