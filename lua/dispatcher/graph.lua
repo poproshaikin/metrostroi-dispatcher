@@ -370,3 +370,78 @@ concommand.Add("dispatcher_graph", function(ply)
     for _, l in ipairs(G.Describe()) do Dispatcher.Chat(ply, l, HUD_PRINTCONSOLE) end
     if IsValid(ply) then Dispatcher.Chat(ply, "[Dispatcher] Граф путей — в консоли (~). Стрелки на метках: !метки") end
 end)
+
+--------------------------------------------------------------------------------
+-- Crossovers between main tracks: where a train can change track, which way it
+-- is then running, and whether that is the right or the wrong direction there.
+--------------------------------------------------------------------------------
+-- Normal running direction on a path (+1 / -1), from its platforms; nil if none
+function G.NormalDir(P)
+    local plus, minus = 0, 0
+    for _, pl in ipairs(P.platforms) do
+        if not pl.siding then if pl.dir then plus = plus + 1 else minus = minus + 1 end end
+    end
+    if plus == minus then return end
+    return plus > minus and 1 or -1
+end
+
+local function nearStation(P, x)
+    local best, bestD
+    for _, pl in ipairs(P.platforms) do
+        local d = math.abs((pl.xEnd or 0) - x)
+        if not pl.siding and (not bestD or d < bestD) then best, bestD = pl, d end
+    end
+    return best and Format("%s, %.0f м", best.station.name, bestD) or "?"
+end
+
+-- { { from, to, x, toX, dir, toDir, wrong, how, signal, switches } ... }
+function G.Crossovers()
+    local g = G.Get()
+    if not g then return {} end
+    local list = {}
+    local function main(P) return P and #P.platforms > 0 end
+    -- signalled: a route from a signal on one main path to a signal on another
+    for _, L in ipairs(g.links) do
+        local P, Q = L.from.path, L.to.path
+        if P ~= Q and main(P) and main(Q) then
+            local nd = G.NormalDir(Q)
+            local sws = {}
+            for _, n in ipairs(L.route.order or {}) do sws[#sws + 1] = n .. (L.route.switches[n] == "alt" and "-" or "+") end
+            list[#list + 1] = { from = P, to = Q, x = L.from.x, toX = L.to.x, dir = L.from.dir, toDir = L.to.dir,
+                wrong = nd ~= nil and L.to.dir ~= nd, how = "светофор " .. (L.from.name or "?") .. " → " .. (L.to.name or "?"),
+                switches = table.concat(sws, ",") }
+        end
+    end
+    -- crossover paths in the track data (both ends on main paths)
+    for _, C in pairs(g.paths) do
+        local a, b = C.ends.start, C.ends["end"]
+        if C.kind == "crossover" and a and b and main(a.host) and main(b.host) and a.host ~= b.host then
+            for _, pair in ipairs({ { a, b }, { b, a } }) do
+                local J1, J2 = pair[1], pair[2]
+                -- entering at J1 the train runs along the host the way the branch leaves it
+                local dir1 = J1.facing
+                local dir2 = -J2.facing   -- it arrives on J2's host against J2's leaving direction
+                local nd = G.NormalDir(J2.host)
+                list[#list + 1] = { from = J1.host, to = J2.host, x = J1.hostX, toX = J2.hostX, dir = dir1, toDir = dir2,
+                    wrong = nd ~= nil and dir2 ~= nd, how = "съезд #" .. C.id,
+                    switches = (J1.switchName or "?") .. "-, " .. (J2.switchName or "?") .. "-" }
+            end
+        end
+    end
+    return list
+end
+
+concommand.Add("dispatcher_crossovers", function(ply)
+    local list = G.Crossovers()
+    local out = { "[ДЦХ] Переходы между главными путями (" .. #list .. "):" }
+    for _, c in ipairs(list) do
+        local nd1, nd2 = G.NormalDir(c.from), G.NormalDir(c.to)
+        out[#out + 1] = Format("  путь #%d (%s), движение %s%s → путь #%d (%s), движение %s — %s. %s [%s]",
+            c.from.id, nearStation(c.from, c.x), c.dir > 0 and "+x" or "-x",
+            nd1 and (c.dir == nd1 and " правильное" or " НЕправильное") or "",
+            c.to.id, nearStation(c.to, c.toX), c.toDir > 0 and "+x" or "-x",
+            c.wrong and "НА НЕПРАВИЛЬНЫЙ путь" or "на правильный путь", c.how, c.switches)
+    end
+    for _, l in ipairs(out) do Dispatcher.Chat(ply, l, HUD_PRINTCONSOLE) end
+    if IsValid(ply) then Dispatcher.Chat(ply, "[ДЦХ] Список съездов — в консоли (~).") end
+end)
