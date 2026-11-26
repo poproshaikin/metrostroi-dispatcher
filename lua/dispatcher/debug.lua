@@ -532,3 +532,38 @@ concommand.Add("dispatcher_off", function(ply)
     Dispatcher.Chat(ply, Format("[Dispatcher] Выключен (хуков %d, таймеров %d). Вагонов на сервере: %d, из них неисправных: %d, всего энтити: %d. Включить: dispatcher_reload",
         nh, #timers, cars, broken, #ents.GetAll()))
 end)
+
+--------------------------------------------------------------------------------
+-- dispatcher_trains (chat: !поезда): every train on the server, where it is
+--------------------------------------------------------------------------------
+concommand.Add("dispatcher_trains", function(ply)
+    if IsValid(ply) and not (game.SinglePlayer() or ply:IsSuperAdmin()) then return end
+    local list = Line.GetConsists()
+    Dispatcher.Chat(ply, Format("[Dispatcher] Поездов: %d", #list))
+    for i, c in ipairs(list) do
+        local head = c.wagons[1]
+        local st = Line.GetState(c)
+        local where = "вне путей"
+        if st and st.onTrack then
+            local best, bd
+            for _, stn in ipairs(Line.GetStations()) do
+                for _, pl in pairs(stn.platforms) do
+                    if pl.path == st.path then
+                        local d = math.abs(pl.xEnd - st.x)
+                        if not bd or d < bd then best, bd = pl, d end
+                    end
+                end
+            end
+            where = best and Format("%.0f м от ст. %s (путь %d)", bd, best.station.name, best.index) or "на путях"
+        end
+        local broken, tilted = false, 0
+        for _, w in ipairs(c.wagons) do
+            if w.DispatcherBroken then broken = true end
+            if math.abs(w:GetAngles().r) > 5 then tilted = tilted + 1 end
+        end
+        local owner = IsValid(head.Owner) and head.Owner:Nick() or "?"
+        Dispatcher.Chat(ply, Format("  %d) %s ×%d, %s, %s, владелец %s, %.0f км/ч%s%s", i, head:GetClass():gsub("gmod_subway_", ""),
+            #c.wagons, where, st and IsValid(st.driver) and ("машинист " .. st.driver:Nick()) or "без машиниста", owner,
+            st and st.speed or 0, broken and ", НЕИСПРАВНЫЙ" or "", tilted > 0 and Format(", накренено вагонов: %d", tilted) or ""))
+    end
+end)

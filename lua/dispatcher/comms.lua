@@ -194,6 +194,7 @@ local CHAT = {
     ["!маршрут"] = "dispatcher_route", ["!route"] = "dispatcher_route",
     ["!арс"] = "dispatcher_ars",
     ["!вывод"] = "dispatcher_rescue", ["!rescue"] = "dispatcher_rescue",
+    ["!поезда"] = "dispatcher_trains",
     ["!съезды"] = "dispatcher_crossovers", ["!сьезды"] = "dispatcher_crossovers",
     ["!пригласительный"] = "dispatcher_invite", ["!пс"] = "dispatcher_invite", ["!invite"] = "dispatcher_invite",
     ["!оборот"] = "dispatcher_order_turnback", ["!turnback"] = "dispatcher_order_turnback",
@@ -219,7 +220,7 @@ local SILENT = { dispatcher_trip = true, dispatcher_trip_cancel = true, dispatch
     dispatcher_siding_add = true, dispatcher_sidings = true, dispatcher_siding_del = true,
     dispatcher_platform_turn = true,
     dispatcher_stopmark = true, dispatcher_stopmark_reset = true,
-    dispatcher_ready = true, dispatcher_clock = true, dispatcher_spawn_broken = true, dispatcher_remove_broken = true, dispatcher_repair_broken = true, dispatcher_graph = true, dispatcher_route = true, dispatcher_invite = true, dispatcher_ars = true, dispatcher_rescue = true, dispatcher_crossovers = true, dispatcher_order_skip = true, dispatcher_order_hold = true, dispatcher_order_restrict = true,
+    dispatcher_ready = true, dispatcher_clock = true, dispatcher_spawn_broken = true, dispatcher_remove_broken = true, dispatcher_repair_broken = true, dispatcher_trains = true, dispatcher_graph = true, dispatcher_route = true, dispatcher_invite = true, dispatcher_ars = true, dispatcher_rescue = true, dispatcher_crossovers = true, dispatcher_order_skip = true, dispatcher_order_hold = true, dispatcher_order_restrict = true,
     dispatcher_order_random = true,
     dispatcher_depot_mark = true, dispatcher_depot_list = true, dispatcher_depot_del = true,
     dispatcher_depot_exit = true, dispatcher_depot_entry = true, dispatcher_export = true }
