@@ -508,3 +508,27 @@ concommand.Add("dispatcher_ars", function(ply)
     for _, l in ipairs(out) do Dispatcher.Chat(ply, l, HUD_PRINTCONSOLE) end
     Dispatcher.Chat(ply, "[ДЦХ] Состояние АРС выведено в консоль (~).")
 end)
+
+--------------------------------------------------------------------------------
+-- dispatcher_off: switch the whole dispatcher off (hooks + timers) to see whether
+-- a lag comes from it; dispatcher_reload switches it back on. Also prints how
+-- many train cars exist (forgotten / stuck trains are a common cause of lag).
+--------------------------------------------------------------------------------
+concommand.Add("dispatcher_off", function(ply)
+    if IsValid(ply) and not (game.SinglePlayer() or ply:IsSuperAdmin()) then return end
+    local nh = 0
+    for event, tbl in pairs(hook.GetTable()) do
+        for name in pairs(table.Copy(tbl)) do
+            if isstring(name) and name:find("^Dispatcher") then hook.Remove(event, name) nh = nh + 1 end
+        end
+    end
+    local timers = { "Dispatcher_CommsLate", "Dispatcher_Debug", "Dispatcher_RandomOrders", "Dispatcher_OrderAck",
+        "Dispatcher_OrderSpeed", "Dispatcher_RouteRelease", "Dispatcher_ScheduleWatch", "Dispatcher_Reconcile" }
+    for _, t in ipairs(timers) do timer.Remove(t) end
+    local cars, broken = 0, 0
+    for _, e in ipairs(ents.FindByClass("gmod_subway_*")) do
+        if e.FrontBogey ~= nil or e.RearBogey ~= nil then cars = cars + 1 if e.DispatcherBroken then broken = broken + 1 end end
+    end
+    Dispatcher.Chat(ply, Format("[Dispatcher] Выключен (хуков %d, таймеров %d). Вагонов на сервере: %d, из них неисправных: %d, всего энтити: %d. Включить: dispatcher_reload",
+        nh, #timers, cars, broken, #ents.GetAll()))
+end)
