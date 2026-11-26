@@ -246,6 +246,9 @@ hook.Add("PlayerEnteredVehicle", "Dispatcher_Hint", function(ply)
         local c = Line.GetPlayerConsist(ply)
         local st = c and Line.GetState(c)
         if not st or st.driver ~= ply or S.GetAssignment(c) then return end
+        -- busy with a rescue (cab changes while towing): no timetable hint
+        if Dispatcher.Rescue and Dispatcher.Rescue.Missions and Dispatcher.Rescue.Missions[c.id] then return end
+        for _, w in ipairs(c.wagons) do if w.DispatcherBroken then return end end
         local ds = Dispatcher.Depot and Dispatcher.Depot.State(c)
         if ds and ds.full then
             Dispatcher.Chat(ply, PREFIX .. Format("Машинист, вы в депо на пути %s. Для наряда напишите !рейс. Все команды: !помощь", ds.track.name))
