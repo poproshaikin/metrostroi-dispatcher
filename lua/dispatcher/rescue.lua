@@ -122,6 +122,53 @@ local function depotGoals(g)
     return list
 end
 
+local function pathName(P)
+    for _, sd in ipairs(Line.GetSidings()) do
+        if sd.path and sd.path.id == P.id then return Format("%s (путь #%d)", sd.name, P.id) end
+    end
+    return "путь #" .. P.id
+end
+
+local function findLink(S, r)
+    for _, L in ipairs(G.Get().links) do
+        if L.from == S and L.route == r then return L end
+    end
+end
+
+-- Run-around through the depot fan, for when the rescue train would enter the
+-- depot first (it pulls) and be shut in behind the broken one: leave the broken
+-- train on the depot-link path Pd the depot route leads to, go alone into the
+-- depot, out by another depot-link path Pe, along a main path, change cabs, back
+-- into Pd from its outer end, couple from the other side and push it in.
+-- Every depot-link path end is taken to be joined to every other through the
+-- depot fan (the depot tracks are not in the track data).
+function RS.RunAround(gl)
+    local g = G.Get()
+    local L0 = findLink(gl.signal, gl.route)
+    local Pd = L0 and L0.to.path
+    if not Pd or Pd.kind ~= "depotlink" then return end
+    local dd = Pd.depotEnds["end"] and 1 or -1           -- direction towards the depot along Pd
+    local best
+    for _, Pe in pairs(g.paths) do
+        if Pe == Pd or Pe.kind ~= "depotlink" then continue end
+        local de = Pe.depotEnds["end"] and 1 or -1
+        for _, L1 in ipairs(Pe.links or {}) do
+            -- out of the depot along Pe onto a main path
+            if L1.from.dir ~= -de or L1.to.path.kind ~= "main" then continue end
+            local Pm, d1 = L1.to.path, L1.to.dir
+            for _, L2 in ipairs(Pm.links or {}) do
+                -- after a cab change on Pm, back into Pd towards the depot
+                if L2.to.path ~= Pd or L2.to.dir ~= dd or L2.from.dir ~= -d1 then continue end
+                local cost = math.abs(L2.from.x - L1.to.x) + (G.NormalDir(Pm) == d1 and 0 or 1000)
+                if not best or cost < best.cost then
+                    best = { cost = cost, Pd = Pd, dd = dd, Pe = Pe, Pm = Pm, d1 = d1, L1 = L1, L2 = L2 }
+                end
+            end
+        end
+    end
+    return best
+end
+
 -- From the coupling point x on graph path P, moving d, broken part ahead = b.
 -- Returns legs (list) or nil, reason.
 function RS.Plan(P, x, d, b, Lb, Lr)
@@ -187,6 +234,25 @@ function RS.Plan(P, x, d, b, Lb, Lr)
             path = from.P, dir = from.d, x = from.x, pushing = from.b })
         cur = from
     end
+    -- pulling into the depot = the rescue train goes in first: run around instead
+    local last = legs[#legs]
+    if last and last.kind == "depot" and not last.pushing then
+        local ra = RS.RunAround(last.goal)
+        if not ra then
+            -- another depot route from the same signal may allow it
+            for _, r in ipairs(last.goal.signal.routes) do
+                if r.depot and r ~= last.goal.route then
+                    local gl2 = { path = last.goal.path, x = last.goal.x, dir = last.goal.dir, signal = last.goal.signal, route = r }
+                    ra = RS.RunAround(gl2)
+                    if ra then last.goal = gl2 break end
+                end
+            end
+        end
+        if ra then
+            last.kind, last.ra = "park", ra
+            legs[#legs + 1] = { kind = "runaround", ra = ra, path = ra.Pm, dir = ra.d1, x = ra.L1.to.x }
+        end
+    end
     return legs
 end
 
@@ -206,6 +272,15 @@ local function describeLeg(L)
     end
     if L.kind == "depot" then
         return Format("%s%s по пути #%d до %s, маршрут в депо (светофор %s)", how, wrong, L.path.id, where, L.goal.signal.name or "?")
+    end
+    if L.kind == "park" then
+        return Format("%s%s по пути #%d до %s, маршрут на %s (светофор %s): ваш поезд уходит в депо, неисправный целиком встаёт на %s — стоп, расцепка",
+            how, wrong, L.path.id, where, pathName(L.ra.Pd), L.goal.signal.name or "?", pathName(L.ra.Pd))
+    end
+    if L.kind == "runaround" then
+        local ra = L.ra
+        return Format("одному: в депо на свободную канаву, смена кабины, выезд по %s (светофор %s) на путь #%d; за светофором %s стоп, смена кабины; маршрут на %s (светофор %s), по !пс к неисправному, сцепка; толкать его в депо на свободную канаву",
+            pathName(ra.Pe), ra.L1.from.name or "?", ra.Pm.id, ra.L2.from.name or "?", pathName(ra.Pd), ra.L2.from.name or "?")
     end
     return L.kind
 end
@@ -376,6 +451,9 @@ local function startTow(M, c, st)
     local legs, err = RS.Plan(P, xc, s, b, M.Lb, M.Lr)
     if not legs then say(M.cid, "Сцепка есть, но план вывода не построен: " .. err .. ". Выводите вручную, маршруты — !маршрут.") return end
     M.legs, M.li, M.phase = legs, 1, "tow"
+    -- pushing it into the depot: only the broken train has to fit on the depot track
+    local last = legs[#legs]
+    if last and last.kind == "depot" and last.pushing then M.needLen = M.Lb end
     say(M.cid, Format("Сцепка есть. Общая длина %.0f м. План вывода в депо:", M.Lb + M.Lr))
     for i, L in ipairs(legs) do say(M.cid, Format("  %d) %s", i, describeLeg(L))) end
     say(M.cid, Format("Скорость со сцепом не более %d км/ч, по неправильному пути не более %d. Пассажиров неисправного поезда высадить на первой станции.",
@@ -423,6 +501,26 @@ local function watchUnload(M, key, cars, st)
     end
 end
 
+-- A random free depot track for a train of length `need` (the marks may sit a
+-- few metres inside the real track ends: Depot counts ±5 m beyond them)
+local function freeCanal(need, except)
+    local D = Dispatcher.Depot
+    if not D then return end
+    local free = {}
+    for _, t in ipairs(D.Tracks()) do
+        if t.complete and t.length + 8 >= need and not D.Occupied(t, except) then free[#free + 1] = t end
+    end
+    return free[math.random(math.max(#free, 1))]
+end
+
+-- the park leg: the broken train wholly on Pd, clear of the entry from the main track
+local function parked(M, ra)
+    local lo, hi, missing = spanOn(M.broken, ra.Pd.raw)
+    if not lo or missing > 0 then return false end
+    local outer = ra.dd > 0 and lo or hi      -- the end facing away from the depot
+    return (outer - ra.L2.to.x) * ra.dd > 10
+end
+
 local nextTick = 0
 hook.Add("Think", "Dispatcher_Rescue", function()
     if CurTime() < nextTick then return end
@@ -436,11 +534,14 @@ hook.Add("Think", "Dispatcher_Rescue", function()
         if #valid == 0 then RS.Missions[cid] = nil say(cid, "Неисправный поезд убран — вывод отменён.") continue end
         if not st then continue end
         -- the depot tracks are usually not in the track data: off the track = in the depot
+        local curLeg = M.phase == "tow" and M.legs and M.legs[M.li]
         if not st.onTrack then
-            if M.phase == "tow" and M.legs and M.legs[M.li] and M.legs[M.li].kind == "depot" then M.phase = "depot" end
-            if M.phase ~= "depot" and M.phase ~= "uncouple" then continue end
+            if curLeg and curLeg.kind == "depot" then M.phase = "depot" end
+            local inDepotLeg = curLeg and (curLeg.kind == "park" or curLeg.kind == "runaround")
+            if M.phase ~= "depot" and M.phase ~= "uncouple" and not inDepotLeg then continue end
         end
         local s = sgn(st.dirPlus)
+        local together = coupled(M, c)
 
         if M.phase == "approach" then
             if M.unloadOwn and not (M.unloadA and M.unloadA.done) then watchUnload(M, "unloadA", c.wagons, st) end
@@ -460,12 +561,12 @@ hook.Add("Think", "Dispatcher_Rescue", function()
         local wrong = nd and nd ~= s
         local lim = wrong and cvWrong:GetInt() or cvSpeed:GetInt()
         M.maxSpeed = math.max(M.maxSpeed, st.speed)
-        if st.speed > lim + TOL and (not M.warnedAt or CurTime() - M.warnedAt > 10) then
+        if together and st.speed > lim + TOL and (not M.warnedAt or CurTime() - M.warnedAt > 10) then
             M.warnedAt = CurTime()
             say(cid, Format("Превышение со сцепом! Не более %d км/ч, у вас %.0f.", lim, st.speed))
             if not M.overNoted then M.overNoted = true violation(M, Format("превышение со сцепом (%.0f км/ч при %d)", st.speed, lim)) end
         end
-        if not (M.unloadB and M.unloadB.done) then watchUnload(M, "unloadB", M.broken, st) end
+        if together and st.onTrack and not (M.unloadB and M.unloadB.done) then watchUnload(M, "unloadB", M.broken, st) end
 
         if M.phase == "tow" then
             local L = M.legs[M.li]
@@ -516,6 +617,46 @@ hook.Add("Think", "Dispatcher_Rescue", function()
                     say(cid, Format("Готовлю маршрут в депо (светофор %s).", gl.signal.name or "?"))
                 end
                 if not P or #P.platforms == 0 then M.phase = "depot" end
+            elseif L.kind == "park" then
+                local gl, ra = L.goal, L.ra
+                if onLeg and math.abs(gl.x - st.x) < SET_DIST and not M.told.set then
+                    M.told.set = true
+                    wantRoute(M, cid, gl.signal, gl.route)
+                    say(cid, Format("Готовлю маршрут на %s (светофор %s). Ваш поезд уходит в депо, неисправный должен целиком встать на %s — скажу «Стоп».",
+                        pathName(ra.Pd), gl.signal.name or "?", pathName(ra.Pd)))
+                end
+                if together and not M.told.parked and parked(M, ra) then
+                    M.told.parked = true
+                    say(cid, Format("Стоп! Неисправный целиком на %s. Остановитесь и расцепитесь.", pathName(ra.Pd)))
+                end
+                if not together then
+                    if not M.told.parked then violation(M, "расцепка до того, как неисправный встал на " .. pathName(ra.Pd)) end
+                    legDone(M)
+                end
+            elseif L.kind == "runaround" then
+                local ra = L.ra
+                if not M.told.go then
+                    M.told.go = true
+                    wantRoute(M, cid, ra.L1.from, ra.L1.route)
+                    wantRoute(M, cid, ra.L2.from, ra.L2.route)
+                    local cn = freeCanal(M.Lr, c)
+                    say(cid, Format("Расцепка есть. Следуйте в депо%s, смените кабину, выезжайте по %s на путь #%d (светофор %s, маршрут приготовлю).",
+                        cn and (" на путь " .. cn.name) or "", pathName(ra.Pe), ra.Pm.id, ra.L1.from.name or "?"))
+                end
+                if st.onTrack and st.path == ra.Pm.raw and s == ra.d1 and not M.told.stop then
+                    local lo, hi = spanOn(c.wagons, st.path)
+                    local rear = lo and (ra.d1 > 0 and lo or hi)
+                    if rear and (rear - ra.L2.from.x) * ra.d1 > CLEAR then
+                        M.told.stop = true
+                        say(cid, Format("Стоп! Состав за светофором %s. Смените кабину: маршрут на %s приготовлю, к неисправному — по !пс, сцепиться.",
+                            ra.L2.from.name or "?", pathName(ra.Pd)))
+                    end
+                end
+                if together and st.stopped then
+                    legDone(M)
+                    M.needLen = M.Lb
+                    say(cid, "Сцепка есть. Толкайте неисправный поезд в депо.")
+                end
             end
             continue
         end
@@ -524,14 +665,11 @@ hook.Add("Think", "Dispatcher_Rescue", function()
             local D = Dispatcher.Depot
             if not D then RS.Finish(M, "Поезд в депо.") continue end
             if not M.canal then
-                local need = M.Lb + M.Lr + 5
-                local free = {}
-                for _, t in ipairs(D.Tracks()) do
-                    if t.complete and t.length >= need and not D.Occupied(t, c) then free[#free + 1] = t end
-                end
-                M.canal = free[math.random(math.max(#free, 1))]
+                local need = M.needLen or (M.Lb + M.Lr + 5)
+                M.canal = freeCanal(need, c)
                 if M.canal then
-                    say(cid, Format("Постановка в депо на путь %s (%.0f м, состав %.0f м).", M.canal.name, M.canal.length, M.Lb + M.Lr))
+                    say(cid, Format("Постановка в депо на путь %s (%.0f м, %s %.0f м).", M.canal.name, M.canal.length,
+                        M.needLen and "неисправный поезд" or "состав", need))
                 else
                     M.canal = false
                     say(cid, "Свободного пути депо нужной длины нет — поставьте на любой свободный, неисправный поезд целиком.")
